@@ -1,439 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 
-// 基础配置状态
+// 基础状态管理
 const includePrivacyTracking = ref(false)
 const trackingDomains = ref<string[]>([])
 const newDomain = ref('')
-
-// 导入功能相关状态
-const showImportDialog = ref(false)
-const importXmlText = ref('')
-const importStatus = ref({ type: '', message: '' })
-
-// 简化的导入函数 -> 完整的XML解析函数
-function parsePrivacyManifest(xmlText: string) {
-  try {
-    // 清空当前配置
-    resetAllConfigurations()
-    
-    // 创建DOM解析器
-    const parser = new DOMParser()
-    const xmlDoc = parser.parseFromString(xmlText, 'application/xml')
-    
-    // 检查解析错误
-    const parseError = xmlDoc.querySelector('parsererror')
-    if (parseError) {
-      throw new Error('XML格式错误，请检查文件内容')
-    }
-    
-    // 获取根节点
-    const dictElement = xmlDoc.querySelector('plist > dict')
-    if (!dictElement) {
-      throw new Error('无效的隐私清单文件格式')
-    }
-    
-    // 解析各个配置项
-    parsePrivacyTracking(dictElement)
-    parseTrackingDomains(dictElement)
-    parseAccessedAPITypes(dictElement)
-    parseCollectedDataTypes(dictElement)
-    
-    importStatus.value = { 
-      type: 'success', 
-      message: '导入成功！已自动填充配置项。' 
-    }
-    showImportDialog.value = false
-    
-  } catch (error: any) {
-    console.error('XML解析错误:', error)
-    importStatus.value = { 
-      type: 'error', 
-      message: `导入失败：${error.message}` 
-    }
-  }
-}
-
-// 重置所有配置项
-function resetAllConfigurations() {
-  includePrivacyTracking.value = false
-  trackingDomains.value = []
-  apiUsageEntries.value = []
-  collectedDataTypes.value = []
-  currentDataType.value = {
-    selectedTypeId: '',
-    linkedToIdentity: false,
-    usedForTracking: false,
-    selectedPurposes: []
-  }
-  currentApiUsage.value = {
-    selectedCategoryId: '',
-    selectedReasons: []
-  }
-}
-
-// 解析隐私跟踪设置
-function parsePrivacyTracking(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyTracking') {
-      const nextElement = key.nextElementSibling
-      if (nextElement?.tagName === 'true') {
-        includePrivacyTracking.value = true
-      }
-      break
-    }
-  }
-}
-
-// 解析跟踪域名
-function parseTrackingDomains(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyTrackingDomains') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const stringElements = arrayElement.querySelectorAll('string')
-        const domains: string[] = []
-        stringElements.forEach(stringEl => {
-          const domain = stringEl.textContent?.trim()
-          if (domain) {
-            domains.push(domain)
-          }
-        })
-        trackingDomains.value = domains
-      }
-      break
-    }
-  }
-}
-
-// 解析API使用类型
-function parseAccessedAPITypes(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyAccessedAPITypes') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const dictElements = arrayElement.querySelectorAll('dict')
-        const parsedEntries: ApiUsageEntry[] = []
-        
-        dictElements.forEach(dictEl => {
-          const entry = parseApiUsageEntry(dictEl)
-          if (entry) {
-            parsedEntries.push(entry)
-          }
-        })
-        
-        apiUsageEntries.value = parsedEntries
-      }
-      break
-    }
-  }
-}
-
-// 解析单个API使用条目
-function parseApiUsageEntry(dictElement: Element): ApiUsageEntry | null {
-  let categoryId = ''
-  let categoryName = ''
-  const selectedReasons: ApiReason[] = []
-  
-  const keys = dictElement.querySelectorAll('key')
-  
-  for (const key of keys) {
-    const keyText = key.textContent?.trim()
-    const nextElement = key.nextElementSibling
-    
-    if (keyText === 'NSPrivacyAccessedAPIType') {
-      categoryId = nextElement?.textContent?.trim() || ''
-      // 根据categoryId查找对应的分类名称
-      const category = availableApiCategories.find(cat => cat.id === categoryId)
-      categoryName = category ? category.name : categoryId
-    } else if (keyText === 'NSPrivacyAccessedAPITypeReasons') {
-      if (nextElement?.tagName === 'array') {
-        const reasonElements = nextElement.querySelectorAll('string')
-        reasonElements.forEach(reasonEl => {
-          const reasonCode = reasonEl.textContent?.trim()
-          if (reasonCode) {
-            // 查找对应的原因对象
-            const allReasons = getAllAvailableReasons()
-            const reason = allReasons.find(r => r.code === reasonCode)
-            if (reason) {
-              selectedReasons.push({ ...reason })
-            }
-          }
-        })
-      }
-    }
-  }
-  
-  if (categoryId) {
-    return {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      categoryId,
-      categoryName,
-      selectedReasons
-    }
-  }
-  
-  return null
-}
-
-// 获取所有可用的API原因
-function getAllAvailableReasons(): ApiReason[] {
-  const allReasons: ApiReason[] = []
-  
-  // 遍历所有分类的原因
-  Object.entries(apiReasonsByCategory).forEach(([categoryId, reasons]) => {
-    reasons.forEach(reason => {
-      allReasons.push(reason)
-    })
-  })
-  
-  return allReasons
-}
-
-// 解析收集的数据类型
-function parseCollectedDataTypes(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyCollectedDataTypes') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const dictElements = arrayElement.querySelectorAll('dict')
-        const parsedDataTypes: CollectedDataType[] = []
-        
-        dictElements.forEach(dictEl => {
-          const dataType = parseCollectedDataType(dictEl)
-          if (dataType) {
-            parsedDataTypes.push(dataType)
-          }
-        })
-        
-        collectedDataTypes.value = parsedDataTypes
-      }
-      break
-    }
-  }
-}
-
-// 解析单个收集的数据类型
-function parseCollectedDataType(dictElement: Element): CollectedDataType | null {
-  let category = ''
-  let name = ''
-  let linkedToIdentity = false
-  let usedForTracking = false
-  const purposes: string[] = []
-  
-  const keys = dictElement.querySelectorAll('key')
-  
-  for (const key of keys) {
-    const keyText = key.textContent?.trim()
-    const nextElement = key.nextElementSibling
-    
-    switch (keyText) {
-      case 'NSPrivacyCollectedDataType':
-        category = nextElement?.textContent?.trim() || ''
-        // 根据category查找对应的数据类型名称
-        const dataType = availableDataTypes.find(dt => dt.id === category)
-        name = dataType ? dataType.name : category
-        break
-        
-      case 'NSPrivacyCollectedDataTypeLinkedToUser':
-        linkedToIdentity = nextElement?.tagName === 'true'
-        break
-        
-      case 'NSPrivacyCollectedDataTypeTracking':
-        usedForTracking = nextElement?.tagName === 'true'
-        break
-        
-      case 'NSPrivacyCollectedDataTypePurposes':
-        if (nextElement?.tagName === 'array') {
-          const purposeElements = nextElement.querySelectorAll('string')
-          purposeElements.forEach(purposeEl => {
-            const purpose = purposeEl.textContent?.trim()
-            if (purpose) {
-              purposes.push(purpose)
-            }
-          })
-        }
-        break
-    }
-  }
-  
-  if (category) {
-    return {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      name,
-      category,
-      selected: true,
-      linkedToIdentity,
-      usedForTracking,
-      purposes
-    }
-  }
-  
-  return null
-}
-
-function handleFileUpload(event: Event) {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (file) {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const xmlContent = e.target?.result as string
-      parsePrivacyManifest(xmlContent)
-    }
-    reader.readAsText(file)
-  }
-}
-
-function handleTextImport() {
-  if (importXmlText.value.trim()) {
-    parsePrivacyManifest(importXmlText.value.trim())
-    importXmlText.value = ''
-  }
-}
-
-function clearImportStatus() {
-  importStatus.value = { type: '', message: '' }
-}
-
-function handleFileDrop(event: DragEvent) {
-  event.preventDefault()
-  const files = event.dataTransfer?.files
-  if (files && files.length > 0) {
-    const file = files[0]
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const xmlContent = e.target?.result as string
-      parsePrivacyManifest(xmlContent)
-    }
-    reader.readAsText(file)
-  }
-}
-
-// 基础功能
-function addDomain() {
-  const domain = newDomain.value.trim()
-  if (domain && !trackingDomains.value.includes(domain)) {
-    trackingDomains.value.push(domain)
-    newDomain.value = ''
-  }
-}
-
-function removeDomain(index: number) {
-  trackingDomains.value.splice(index, 1)
-}
-
-function isPurposeSelected(purposeId: string) {
-  return currentDataType.value.selectedPurposes.includes(purposeId)
-}
-
-function getPurposeName(purposeId: string) {
-  const purpose = availablePurposes.find(p => p.id === purposeId)
-  return purpose ? purpose.name : purposeId
-}
-
-// 生成XML
-const generatedXml = computed(() => {
-  const xmlLines = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-    '<plist version="1.0">',
-    '<dict>'
-  ]
-  
-  if (includePrivacyTracking.value) {
-    xmlLines.push('    <key>NSPrivacyTracking</key>')
-    xmlLines.push('    <true/>')
-  }
-  
-  if (trackingDomains.value.length > 0) {
-    xmlLines.push('    <key>NSPrivacyTrackingDomains</key>')
-    xmlLines.push('    <array>')
-    trackingDomains.value.forEach(domain => {
-      xmlLines.push(`        <string>${domain}</string>`)
-    })
-    xmlLines.push('    </array>')
-  }
-  
-  if (apiUsageEntries.value.length > 0) {
-    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
-    xmlLines.push('    <array>')
-    apiUsageEntries.value.forEach(entry => {
-      xmlLines.push('        <dict>')
-      xmlLines.push(`            <key>NSPrivacyAccessedAPIType</key>`)
-      xmlLines.push(`            <string>${entry.categoryId}</string>`)
-      if (entry.selectedReasons.length > 0) {
-        xmlLines.push('            <key>NSPrivacyAccessedAPITypeReasons</key>')
-        xmlLines.push('            <array>')
-        entry.selectedReasons.forEach(reason => {
-          xmlLines.push(`                <string>${reason.code}</string>`)
-        })
-        xmlLines.push('            </array>')
-      }
-      xmlLines.push('        </dict>')
-    })
-    xmlLines.push('    </array>')
-  } else {
-    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
-    xmlLines.push('    <array></array>')
-  }
-  
-  xmlLines.push('    <key>NSPrivacyCollectedDataTypes</key>')
-  if (collectedDataTypes.value.length > 0) {
-    xmlLines.push('    <array>')
-    collectedDataTypes.value.forEach(dataType => {
-      xmlLines.push('        <dict>')
-      xmlLines.push('            <key>NSPrivacyCollectedDataType</key>')
-      xmlLines.push(`            <string>${dataType.category}</string>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypeLinkedToUser</key>')
-      xmlLines.push(`            <${dataType.linkedToIdentity ? 'true' : 'false'}/>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypeTracking</key>')
-      xmlLines.push(`            <${dataType.usedForTracking ? 'true' : 'false'}/>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypePurposes</key>')
-      xmlLines.push('            <array>')
-      dataType.purposes.forEach(purpose => {
-        xmlLines.push(`                <string>${purpose}</string>`)
-      })
-      xmlLines.push('            </array>')
-      xmlLines.push('        </dict>')
-    })
-    xmlLines.push('    </array>')
-  } else {
-    xmlLines.push('    <array></array>')
-  }
-  xmlLines.push('</dict>')
-  xmlLines.push('</plist>')
-  
-  return xmlLines.join('\n')
-})
-
-// 剪贴板和下载函数
-async function copyToClipboard() {
-  try {
-    await navigator.clipboard.writeText(generatedXml.value)
-    alert('已复制到剪贴板！')
-  } catch {
-    alert('复制到剪贴板失败')
-  }
-}
-
-function downloadManifest() {
-  const blob = new Blob([generatedXml.value], { type: 'application/xml' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'PrivacyInfo.xcprivacy'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-// 基础状态管理（已在文件开头声明）
 
 // API使用组合的类型定义
 interface ApiReason {
@@ -635,14 +206,7 @@ function addDataType() {
   }
   
   collectedDataTypes.value.push(newDataType)
-  
-  // 重置当前数据类型
-  currentDataType.value = {
-    selectedTypeId: '',
-    linkedToIdentity: false,
-    usedForTracking: false,
-    selectedPurposes: []
-  }
+  resetCurrentDataType()
 }
 
 function removeDataType(dataTypeId: string) {
@@ -650,6 +214,13 @@ function removeDataType(dataTypeId: string) {
   if (index > -1) {
     collectedDataTypes.value.splice(index, 1)
   }
+}
+
+function resetCurrentDataType() {
+  currentDataType.value.selectedTypeId = ''
+  currentDataType.value.linkedToIdentity = false
+  currentDataType.value.usedForTracking = false
+  currentDataType.value.selectedPurposes = []
 }
 
 function togglePurpose(purposeId: string) {
@@ -660,6 +231,122 @@ function togglePurpose(purposeId: string) {
     currentDataType.value.selectedPurposes.push(purposeId)
   }
 }
+
+function isPurposeSelected(purposeId: string) {
+  return currentDataType.value.selectedPurposes.includes(purposeId)
+}
+
+function getPurposeName(purposeId: string) {
+  const purpose = availablePurposes.find(p => p.id === purposeId)
+  return purpose ? purpose.name : purposeId
+}
+
+// 域名管理函数
+function addDomain() {
+  const domain = newDomain.value.trim()
+  if (domain && !trackingDomains.value.includes(domain)) {
+    trackingDomains.value.push(domain)
+    newDomain.value = ''
+  }
+}
+
+function removeDomain(index: number) {
+  trackingDomains.value.splice(index, 1)
+}
+
+// 剪贴板和下载函数
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(generatedXml.value)
+    alert('已复制到剪贴板！')
+  } catch {
+    alert('复制到剪贴板失败')
+  }
+}
+
+function downloadManifest() {
+  const blob = new Blob([generatedXml.value], { type: 'application/xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'PrivacyInfo.xcprivacy'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Generate XML
+const generatedXml = computed(() => {
+  const xmlLines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>'
+  ]
+  
+  if (includePrivacyTracking.value) {
+    xmlLines.push('    <key>NSPrivacyTracking</key>')
+    xmlLines.push('    <true/>')
+  }
+  
+  if (trackingDomains.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyTrackingDomains</key>')
+    xmlLines.push('    <array>')
+    trackingDomains.value.forEach(domain => {
+      xmlLines.push(`        <string>${domain}</string>`)
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  if (apiUsageEntries.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
+    xmlLines.push('    <array>')
+    apiUsageEntries.value.forEach(entry => {
+      xmlLines.push('        <dict>')
+      xmlLines.push(`            <key>NSPrivacyAccessedAPIType</key>`)
+      xmlLines.push(`            <string>${entry.categoryId}</string>`)
+      if (entry.selectedReasons.length > 0) {
+        xmlLines.push('            <key>NSPrivacyAccessedAPITypeReasons</key>')
+        xmlLines.push('            <array>')
+        entry.selectedReasons.forEach(reason => {
+          xmlLines.push(`                <string>${reason.code}</string>`)
+        })
+        xmlLines.push('            </array>')
+      }
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  xmlLines.push('    <key>NSPrivacyCollectedDataTypes</key>')
+  if (collectedDataTypes.value.length > 0) {
+    xmlLines.push('    <array>')
+    collectedDataTypes.value.forEach(dataType => {
+      xmlLines.push('        <dict>')
+      xmlLines.push('            <key>NSPrivacyCollectedDataType</key>')
+      xmlLines.push(`            <string>${dataType.category}</string>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeLinkedToUser</key>')
+      xmlLines.push(`            <${dataType.linkedToIdentity ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeTracking</key>')
+      xmlLines.push(`            <${dataType.usedForTracking ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypePurposes</key>')
+      xmlLines.push('            <array>')
+      dataType.purposes.forEach(purpose => {
+        xmlLines.push(`                <string>${purpose}</string>`)
+      })
+      xmlLines.push('            </array>')
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  } else {
+    xmlLines.push('    <array></array>')
+  }
+  xmlLines.push('</dict>')
+  xmlLines.push('</plist>')
+  
+  return xmlLines.join('\n')
+})
 </script>
 
 <template>
@@ -762,13 +449,15 @@ function togglePurpose(purposeId: string) {
                 </label>
               </div>
             </div>
-            <button 
-              @click="addApiUsage" 
-              :disabled="currentApiUsage.selectedReasons.length === 0"
-              class="add-api-btn"
-            >
-              添加 API 使用组合
-            </button>
+            <div class="button-container">
+              <button 
+                @click="addApiUsage" 
+                :disabled="currentApiUsage.selectedReasons.length === 0"
+                class="add-api-btn"
+              >
+                添加 API 使用组合
+              </button>
+            </div>
           </div>
 
           <!-- 已添加的 API 使用列表 -->
@@ -859,13 +548,15 @@ function togglePurpose(purposeId: string) {
               </div>
             </div>
 
-            <button 
-              @click="addDataType" 
-              :disabled="currentDataType.selectedPurposes.length === 0"
-              class="add-data-btn"
-            >
-              添加数据类型
-            </button>
+            <div class="button-container">
+              <button 
+                @click="addDataType" 
+                :disabled="currentDataType.selectedPurposes.length === 0"
+                class="add-data-btn"
+              >
+                添加数据类型
+              </button>
+            </div>
           </div>
 
           <!-- 已添加的数据类型列表 -->
@@ -906,67 +597,12 @@ function togglePurpose(purposeId: string) {
           <div class="preview-header">
             <h2>生成的隐私清单预览</h2>
             <div class="action-buttons">
-              <button @click="showImportDialog = true" class="import-btn">导入XML文件</button>
               <button @click="copyToClipboard" class="copy-btn">复制到剪贴板</button>
               <button @click="downloadManifest" class="download-btn">下载文件</button>
             </div>
           </div>
           <div class="xml-preview">
             <pre><code>{{ generatedXml }}</code></pre>
-          </div>
-        </div>
-
-        <!-- 导入对话框 -->
-        <div v-if="showImportDialog" class="import-dialog-overlay" @click="showImportDialog = false">
-          <div class="import-dialog" @click.stop>
-            <div class="import-dialog-header">
-              <h3>导入隐私清单文件</h3>
-              <button @click="showImportDialog = false" class="close-btn">×</button>
-            </div>
-            
-            <div class="import-dialog-content">
-              <!-- 文件上传区域 -->
-              <div class="upload-area" 
-                   @drop="handleFileDrop" 
-                   @dragover.prevent 
-                   @dragenter.prevent>
-                <input 
-                  type="file" 
-                  accept=".xml,.xcprivacy"
-                  @change="handleFileUpload"
-                  id="file-input"
-                  class="file-input"
-                >
-                <label for="file-input" class="upload-label">
-                  <div class="upload-icon">📁</div>
-                  <div class="upload-text">
-                    <div class="upload-primary">点击选择文件或拖拽到此处</div>
-                    <div class="upload-secondary">支持 .xml 和 .xcprivacy 文件</div>
-                  </div>
-                </label>
-              </div>
-
-              <!-- 文本导入区域 -->
-              <div class="text-import-area">
-                <label for="xml-text">或直接粘贴XML内容：</label>
-                <textarea 
-                  id="xml-text"
-                  v-model="importXmlText" 
-                  placeholder="粘贴您的XML内容到这里..."
-                  class="xml-textarea"
-                ></textarea>
-                <button @click="handleTextImport" :disabled="!importXmlText.trim()" class="import-text-btn">
-                  导入文本内容
-                </button>
-              </div>
-
-              <!-- 状态消息 -->
-              <div v-if="importStatus.message" 
-                   :class="['import-status', importStatus.type]">
-                {{ importStatus.message }}
-                <button @click="clearImportStatus" class="status-close">×</button>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -1283,6 +919,28 @@ body, html {
   font-weight: 400;
 }
 
+
+/* 按钮容器 - 居中布局 */
+.button-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+/* 响应式设计 - 按钮容器优化 */
+@media (max-width: 768px) {
+  .button-container {
+    margin-top: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .button-container {
+    margin-top: 0.75rem;
+  }
+}
 
 /* 按钮样式 - 苹果官网风格 */
 .add-btn,
@@ -1808,10 +1466,9 @@ body, html {
 }
 
 .copy-btn,
-.download-btn,
-.import-btn {
+.download-btn {
   padding: 0.875rem 2rem;
-  border: 2px solid transparent; /* 为深色模式准备边框 */
+  border: none;
   border-radius: 12px;
   font-size: 1rem;
   font-weight: 600;
@@ -1821,23 +1478,10 @@ body, html {
   overflow: hidden;
 }
 
-.import-btn {
-  background: linear-gradient(135deg, var(--warning-color), #ffb347);
-  color: white;
-  box-shadow: 0 4px 16px rgba(255, 149, 0, 0.3);
-  border-color: #ff9500; /* 橙色边框 */
-}
-
-.import-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(255, 149, 0, 0.4);
-}
-
 .copy-btn {
   background: linear-gradient(135deg, var(--secondary-color), #40d65a);
   color: white;
   box-shadow: 0 4px 16px rgba(52, 199, 89, 0.3);
-  border-color: #40d65a; /* 绿色边框 */
 }
 
 .copy-btn:hover {
@@ -1849,42 +1493,11 @@ body, html {
   background: var(--gradient-primary);
   color: white;
   box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
-  border-color: #4da6ff; /* 蓝色边框 */
 }
 
 .download-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
-}
-
-/* 深色模式下的按钮边框优化 */
-@media (prefers-color-scheme: dark) {
-  .import-btn {
-    border-color: #ff9500;
-    box-shadow: 0 4px 16px rgba(255, 149, 0, 0.4), 0 0 0 1px rgba(255, 149, 0, 0.2);
-  }
-  
-  .import-btn:hover {
-    box-shadow: 0 8px 25px rgba(255, 149, 0, 0.5), 0 0 0 2px rgba(255, 149, 0, 0.3);
-  }
-  
-  .copy-btn {
-    border-color: #40d65a;
-    box-shadow: 0 4px 16px rgba(64, 214, 90, 0.4), 0 0 0 1px rgba(64, 214, 90, 0.2);
-  }
-  
-  .copy-btn:hover {
-    box-shadow: 0 8px 25px rgba(64, 214, 90, 0.5), 0 0 0 2px rgba(64, 214, 90, 0.3);
-  }
-  
-  .download-btn {
-    border-color: #4da6ff;
-    box-shadow: 0 4px 16px rgba(77, 166, 255, 0.4), 0 0 0 1px rgba(77, 166, 255, 0.2);
-  }
-  
-  .download-btn:hover {
-    box-shadow: 0 8px 25px rgba(77, 166, 255, 0.5), 0 0 0 2px rgba(77, 166, 255, 0.3);
-  }
 }
 
 
@@ -1963,272 +1576,9 @@ body, html {
   }
   
   .copy-btn,
-  .download-btn,
-  .import-btn {
+  .download-btn {
     width: 100%;
     text-align: center;
-  }
-}
-
-/* 导入对话框样式 */
-.import-dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(10px);
-}
-
-.import-dialog {
-  background: var(--card-background);
-  border-radius: 16px;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--border-color);
-}
-
-.import-dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.import-dialog-header h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: var(--text-secondary);
-  padding: 0.25rem;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: var(--border-color);
-  color: var(--text-primary);
-}
-
-.import-dialog-content {
-  padding: 2rem;
-}
-
-/* 文件上传区域 */
-.upload-area {
-  margin-bottom: 2rem;
-}
-
-.file-input {
-  display: none;
-}
-
-.upload-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 2rem;
-  border: 2px dashed var(--border-color);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  background-color: var(--background-color);
-}
-
-.upload-label:hover {
-  border-color: var(--primary-color);
-  background-color: rgba(0, 122, 255, 0.05);
-}
-
-.upload-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-}
-
-.upload-text {
-  text-align: center;
-}
-
-.upload-primary {
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
-}
-
-.upload-secondary {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-}
-
-/* 文本导入区域 */
-.text-import-area {
-  margin-bottom: 1.5rem;
-}
-
-.text-import-area label {
-  display: block;
-  margin-bottom: 0.75rem;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.xml-textarea {
-  width: 100%;
-  min-height: 200px;
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  background-color: var(--background-color);
-  color: var(--text-primary);
-  resize: vertical;
-  transition: border-color 0.2s;
-}
-
-.xml-textarea:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
-}
-
-.xml-textarea::placeholder {
-  color: var(--text-secondary);
-}
-
-.import-text-btn {
-  margin-top: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--gradient-primary);
-  color: white;
-  border: 2px solid #4da6ff; /* 蓝色边框 */
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.import-text-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
-}
-
-.import-text-btn:disabled {
-  background: linear-gradient(135deg, #c6c6c8, #b0b0b0);
-  border-color: #c6c6c8;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* 状态消息 */
-.import-status {
-  padding: 1rem;
-  border-radius: 8px;
-  margin-top: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.import-status.success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.import-status.error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
-
-.status-close {
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  cursor: pointer;
-  color: inherit;
-  padding: 0.25rem;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.status-close:hover {
-  background-color: rgba(0, 0, 0, 0.1);
-}
-
-/* 深色模式下的导入对话框优化 */
-@media (prefers-color-scheme: dark) {
-  .import-dialog {
-    background: var(--card-background);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  }
-  
-  .import-dialog-header {
-    border-bottom-color: var(--border-color);
-  }
-  
-  .import-dialog-header h3 {
-    color: var(--text-primary);
-  }
-  
-  .upload-label:hover {
-    border-color: #0a84ff;
-    background-color: rgba(10, 132, 255, 0.1);
-  }
-  
-  .xml-textarea {
-    background-color: var(--card-background);
-    border-color: var(--border-color);
-    color: var(--text-primary);
-  }
-  
-  .xml-textarea:focus {
-    border-color: #0a84ff;
-    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
-  }
-  
-  .import-text-btn {
-    border-color: #4da6ff;
-    box-shadow: 0 0 0 1px rgba(77, 166, 255, 0.2);
-  }
-  
-  .import-text-btn:hover:not(:disabled) {
-    box-shadow: 0 4px 12px rgba(77, 166, 255, 0.4), 0 0 0 1px rgba(77, 166, 255, 0.3);
-  }
-  
-  .import-status.success {
-    background-color: rgba(64, 214, 90, 0.2);
-    color: #40d65a;
-    border-color: rgba(64, 214, 90, 0.3);
-  }
-  
-  .import-status.error {
-    background-color: rgba(255, 85, 85, 0.2);
-    color: #ff5555;
-    border-color: rgba(255, 85, 85, 0.3);
   }
 }
 </style>
