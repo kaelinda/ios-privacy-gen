@@ -11,271 +11,206 @@ const showImportDialog = ref(false)
 const importXmlText = ref('')
 const importStatus = ref({ type: '', message: '' })
 
-// 简化的导入函数 -> 完整的XML解析函数
+// 导入XML解析函数
 function parsePrivacyManifest(xmlText: string) {
   try {
-    // 清空当前配置
-    resetAllConfigurations()
-    
-    // 创建DOM解析器
     const parser = new DOMParser()
-    const xmlDoc = parser.parseFromString(xmlText, 'application/xml')
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
     
     // 检查解析错误
     const parseError = xmlDoc.querySelector('parsererror')
     if (parseError) {
-      throw new Error('XML格式错误，请检查文件内容')
+      throw new Error('XML格式无效')
     }
     
-    // 获取根节点
-    const dictElement = xmlDoc.querySelector('plist > dict')
-    if (!dictElement) {
-      throw new Error('无效的隐私清单文件格式')
+    // 重置当前状态
+    resetAllStates()
+    
+    // 解析隐私跟踪设置
+    const privacyTracking = xmlDoc.querySelector('key[text="NSPrivacyTracking"]')
+    if (privacyTracking && privacyTracking.nextElementSibling?.tagName === 'true') {
+      includePrivacyTracking.value = true
     }
     
-    // 解析各个配置项
-    parsePrivacyTracking(dictElement)
-    parseTrackingDomains(dictElement)
-    parseAccessedAPITypes(dictElement)
-    parseCollectedDataTypes(dictElement)
-    
-    importStatus.value = { 
-      type: 'success', 
-      message: '导入成功！已自动填充配置项。' 
-    }
-    showImportDialog.value = false
-    
-  } catch (error: any) {
-    console.error('XML解析错误:', error)
-    importStatus.value = { 
-      type: 'error', 
-      message: `导入失败：${error.message}` 
-    }
-  }
-}
-
-// 重置所有配置项
-function resetAllConfigurations() {
-  includePrivacyTracking.value = false
-  trackingDomains.value = []
-  apiUsageEntries.value = []
-  collectedDataTypes.value = []
-  currentDataType.value = {
-    selectedTypeId: '',
-    linkedToIdentity: false,
-    usedForTracking: false,
-    selectedPurposes: []
-  }
-  currentApiUsage.value = {
-    selectedCategoryId: '',
-    selectedReasons: []
-  }
-}
-
-// 解析隐私跟踪设置
-function parsePrivacyTracking(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyTracking') {
-      const nextElement = key.nextElementSibling
-      if (nextElement?.tagName === 'true') {
-        includePrivacyTracking.value = true
-      }
-      break
-    }
-  }
-}
-
-// 解析跟踪域名
-function parseTrackingDomains(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyTrackingDomains') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const stringElements = arrayElement.querySelectorAll('string')
-        const domains: string[] = []
-        stringElements.forEach(stringEl => {
-          const domain = stringEl.textContent?.trim()
-          if (domain) {
-            domains.push(domain)
-          }
-        })
-        trackingDomains.value = domains
-      }
-      break
-    }
-  }
-}
-
-// 解析API使用类型
-function parseAccessedAPITypes(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyAccessedAPITypes') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const dictElements = arrayElement.querySelectorAll('dict')
-        const parsedEntries: ApiUsageEntry[] = []
-        
-        dictElements.forEach(dictEl => {
-          const entry = parseApiUsageEntry(dictEl)
-          if (entry) {
-            parsedEntries.push(entry)
-          }
-        })
-        
-        apiUsageEntries.value = parsedEntries
-      }
-      break
-    }
-  }
-}
-
-// 解析单个API使用条目
-function parseApiUsageEntry(dictElement: Element): ApiUsageEntry | null {
-  let categoryId = ''
-  let categoryName = ''
-  const selectedReasons: ApiReason[] = []
-  
-  const keys = dictElement.querySelectorAll('key')
-  
-  for (const key of keys) {
-    const keyText = key.textContent?.trim()
-    const nextElement = key.nextElementSibling
-    
-    if (keyText === 'NSPrivacyAccessedAPIType') {
-      categoryId = nextElement?.textContent?.trim() || ''
-      // 根据categoryId查找对应的分类名称
-      const category = availableApiCategories.find(cat => cat.id === categoryId)
-      categoryName = category ? category.name : categoryId
-    } else if (keyText === 'NSPrivacyAccessedAPITypeReasons') {
-      if (nextElement?.tagName === 'array') {
-        const reasonElements = nextElement.querySelectorAll('string')
-        reasonElements.forEach(reasonEl => {
-          const reasonCode = reasonEl.textContent?.trim()
-          if (reasonCode) {
-            // 查找对应的原因对象
-            const allReasons = getAllAvailableReasons()
-            const reason = allReasons.find(r => r.code === reasonCode)
-            if (reason) {
-              selectedReasons.push({ ...reason })
-            }
-          }
-        })
-      }
-    }
-  }
-  
-  if (categoryId) {
-    return {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      categoryId,
-      categoryName,
-      selectedReasons
-    }
-  }
-  
-  return null
-}
-
-// 获取所有可用的API原因
-function getAllAvailableReasons(): ApiReason[] {
-  const allReasons: ApiReason[] = []
-  
-  // 遍历所有分类的原因
-  Object.entries(apiReasonsByCategory).forEach(([categoryId, reasons]) => {
-    reasons.forEach(reason => {
-      allReasons.push(reason)
-    })
-  })
-  
-  return allReasons
-}
-
-// 解析收集的数据类型
-function parseCollectedDataTypes(dictElement: Element) {
-  const keys = dictElement.querySelectorAll('key')
-  for (const key of keys) {
-    if (key.textContent?.trim() === 'NSPrivacyCollectedDataTypes') {
-      const arrayElement = key.nextElementSibling
-      if (arrayElement?.tagName === 'array') {
-        const dictElements = arrayElement.querySelectorAll('dict')
-        const parsedDataTypes: CollectedDataType[] = []
-        
-        dictElements.forEach(dictEl => {
-          const dataType = parseCollectedDataType(dictEl)
-          if (dataType) {
-            parsedDataTypes.push(dataType)
-          }
-        })
-        
-        collectedDataTypes.value = parsedDataTypes
-      }
-      break
-    }
-  }
-}
-
-// 解析单个收集的数据类型
-function parseCollectedDataType(dictElement: Element): CollectedDataType | null {
-  let category = ''
-  let name = ''
-  let linkedToIdentity = false
-  let usedForTracking = false
-  const purposes: string[] = []
-  
-  const keys = dictElement.querySelectorAll('key')
-  
-  for (const key of keys) {
-    const keyText = key.textContent?.trim()
-    const nextElement = key.nextElementSibling
-    
-    switch (keyText) {
-      case 'NSPrivacyCollectedDataType':
-        category = nextElement?.textContent?.trim() || ''
-        // 根据category查找对应的数据类型名称
-        const dataType = availableDataTypes.find(dt => dt.id === category)
-        name = dataType ? dataType.name : category
-        break
-        
-      case 'NSPrivacyCollectedDataTypeLinkedToUser':
-        linkedToIdentity = nextElement?.tagName === 'true'
-        break
-        
-      case 'NSPrivacyCollectedDataTypeTracking':
-        usedForTracking = nextElement?.tagName === 'true'
-        break
-        
-      case 'NSPrivacyCollectedDataTypePurposes':
-        if (nextElement?.tagName === 'array') {
-          const purposeElements = nextElement.querySelectorAll('string')
-          purposeElements.forEach(purposeEl => {
-            const purpose = purposeEl.textContent?.trim()
-            if (purpose) {
-              purposes.push(purpose)
+    // 解析跟踪域名
+    const allKeys = xmlDoc.querySelectorAll('key')
+    for (let i = 0; i < allKeys.length; i++) {
+      if (allKeys[i].textContent === 'NSPrivacyTrackingDomains') {
+        const domainsArray = allKeys[i].nextElementSibling
+        if (domainsArray?.tagName === 'array') {
+          const domainStrings = domainsArray.querySelectorAll('string')
+          domainStrings.forEach(domain => {
+            if (domain.textContent) {
+              trackingDomains.value.push(domain.textContent)
             }
           })
         }
         break
+      }
+    }
+    
+    // 解析API使用类型
+    parseApiTypes(xmlDoc)
+    
+    // 解析收集的数据类型
+    parseCollectedDataTypes(xmlDoc)
+    
+    importStatus.value = { type: 'success', message: '导入成功！已自动填充所有配置项。' }
+    showImportDialog.value = false
+    
+  } catch (error: any) {
+    importStatus.value = { type: 'error', message: `导入失败：${error.message}` }
+  }
+}
+
+// 解析API使用类型
+function parseApiTypes(xmlDoc: Document) {
+  const apiTypesKeys = xmlDoc.querySelectorAll('key')
+  for (let i = 0; i < apiTypesKeys.length; i++) {
+    if (apiTypesKeys[i].textContent === 'NSPrivacyAccessedAPITypes') {
+      const apiTypesArray = apiTypesKeys[i].nextElementSibling
+      if (apiTypesArray?.tagName === 'array') {
+        const apiDicts = apiTypesArray.querySelectorAll('dict')
+        apiDicts.forEach(dict => {
+          let apiType = ''
+          const reasons: ApiReason[] = []
+          
+          const keys = dict.querySelectorAll('key')
+          keys.forEach(key => {
+            if (key.textContent === 'NSPrivacyAccessedAPIType') {
+              const typeString = key.nextElementSibling
+              if (typeString?.tagName === 'string') {
+                apiType = typeString.textContent || ''
+              }
+            } else if (key.textContent === 'NSPrivacyAccessedAPITypeReasons') {
+              const reasonsArray = key.nextElementSibling
+              if (reasonsArray?.tagName === 'array') {
+                const reasonStrings = reasonsArray.querySelectorAll('string')
+                reasonStrings.forEach(reasonString => {
+                  const reasonCode = reasonString.textContent
+                  if (reasonCode) {
+                    // 根据代码查找对应的原因对象
+                    const foundReason = findReasonByCode(apiType, reasonCode)
+                    if (foundReason) {
+                      reasons.push({ ...foundReason })
+                    }
+                  }
+                })
+              }
+            }
+          })
+          
+          if (apiType && reasons.length > 0) {
+            const categoryName = availableApiCategories.find(cat => cat.id === apiType)?.name || ''
+            const newEntry: ApiUsageEntry = {
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+              categoryId: apiType,
+              categoryName: categoryName,
+              selectedReasons: reasons
+            }
+            apiUsageEntries.value.push(newEntry)
+          }
+        })
+      }
+      break
     }
   }
-  
-  if (category) {
-    return {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      name,
-      category,
-      selected: true,
-      linkedToIdentity,
-      usedForTracking,
-      purposes
+}
+
+// 解析收集的数据类型
+function parseCollectedDataTypes(xmlDoc: Document) {
+  const dataTypesKeys = xmlDoc.querySelectorAll('key')
+  for (let i = 0; i < dataTypesKeys.length; i++) {
+    if (dataTypesKeys[i].textContent === 'NSPrivacyCollectedDataTypes') {
+      const dataTypesArray = dataTypesKeys[i].nextElementSibling
+      if (dataTypesArray?.tagName === 'array') {
+        const dataDicts = dataTypesArray.querySelectorAll('dict')
+        dataDicts.forEach(dict => {
+          let dataType = ''
+          let linkedToUser = false
+          let tracking = false
+          const purposes: string[] = []
+          
+          const keys = dict.querySelectorAll('key')
+          keys.forEach(key => {
+            const keyText = key.textContent
+            const nextElement = key.nextElementSibling
+            
+            if (keyText === 'NSPrivacyCollectedDataType' && nextElement?.tagName === 'string') {
+              dataType = nextElement.textContent || ''
+            } else if (keyText === 'NSPrivacyCollectedDataTypeLinkedToUser') {
+              linkedToUser = nextElement?.tagName === 'true'
+            } else if (keyText === 'NSPrivacyCollectedDataTypeTracking') {
+              tracking = nextElement?.tagName === 'true'
+            } else if (keyText === 'NSPrivacyCollectedDataTypePurposes' && nextElement?.tagName === 'array') {
+              const purposeStrings = nextElement.querySelectorAll('string')
+              purposeStrings.forEach(purposeString => {
+                if (purposeString.textContent) {
+                  purposes.push(purposeString.textContent)
+                }
+              })
+            }
+          })
+          
+          if (dataType && purposes.length > 0) {
+            const dataTypeName = availableDataTypes.find(dt => dt.id === dataType)?.name || dataType
+            const newDataType: CollectedDataType = {
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+              name: dataTypeName,
+              category: dataType,
+              selected: true,
+              linkedToIdentity: linkedToUser,
+              usedForTracking: tracking,
+              purposes: purposes
+            }
+            collectedDataTypes.value.push(newDataType)
+          }
+        })
+      }
+      break
     }
   }
-  
+}
+
+// 根据代码查找原因对象
+function findReasonByCode(apiType: string, reasonCode: string): ApiReason | null {
+  const reasons = apiReasonsByCategory[apiType as keyof typeof apiReasonsByCategory]
+  if (reasons) {
+    return reasons.find(reason => reason.code === reasonCode) || null
+  }
   return null
 }
 
+// 重置所有状态
+function resetAllStates() {
+  includePrivacyTracking.value = false
+  trackingDomains.value = []
+  apiUsageEntries.value = []
+  collectedDataTypes.value = []
+  resetCurrentApiUsage()
+  resetCurrentDataType()
+}
+
+// 处理拖拽文件
+function handleFileDrop(event: DragEvent) {
+  event.preventDefault()
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    const file = files[0]
+    if (file.name.endsWith('.xml') || file.name.endsWith('.xcprivacy')) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const xmlContent = e.target?.result as string
+        parsePrivacyManifest(xmlContent)
+      }
+      reader.readAsText(file)
+    } else {
+      importStatus.value = { type: 'error', message: '请选择有效的XML或xcprivacy文件' }
+    }
+  }
+}
+
+// 处理文件上传
 function handleFileUpload(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
@@ -289,6 +224,7 @@ function handleFileUpload(event: Event) {
   }
 }
 
+// 处理XML文本导入
 function handleTextImport() {
   if (importXmlText.value.trim()) {
     parsePrivacyManifest(importXmlText.value.trim())
@@ -296,144 +232,10 @@ function handleTextImport() {
   }
 }
 
+// 关闭导入状态提示
 function clearImportStatus() {
   importStatus.value = { type: '', message: '' }
 }
-
-function handleFileDrop(event: DragEvent) {
-  event.preventDefault()
-  const files = event.dataTransfer?.files
-  if (files && files.length > 0) {
-    const file = files[0]
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const xmlContent = e.target?.result as string
-      parsePrivacyManifest(xmlContent)
-    }
-    reader.readAsText(file)
-  }
-}
-
-// 基础功能
-function addDomain() {
-  const domain = newDomain.value.trim()
-  if (domain && !trackingDomains.value.includes(domain)) {
-    trackingDomains.value.push(domain)
-    newDomain.value = ''
-  }
-}
-
-function removeDomain(index: number) {
-  trackingDomains.value.splice(index, 1)
-}
-
-function isPurposeSelected(purposeId: string) {
-  return currentDataType.value.selectedPurposes.includes(purposeId)
-}
-
-function getPurposeName(purposeId: string) {
-  const purpose = availablePurposes.find(p => p.id === purposeId)
-  return purpose ? purpose.name : purposeId
-}
-
-// 生成XML
-const generatedXml = computed(() => {
-  const xmlLines = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-    '<plist version="1.0">',
-    '<dict>'
-  ]
-  
-  if (includePrivacyTracking.value) {
-    xmlLines.push('    <key>NSPrivacyTracking</key>')
-    xmlLines.push('    <true/>')
-  }
-  
-  if (trackingDomains.value.length > 0) {
-    xmlLines.push('    <key>NSPrivacyTrackingDomains</key>')
-    xmlLines.push('    <array>')
-    trackingDomains.value.forEach(domain => {
-      xmlLines.push(`        <string>${domain}</string>`)
-    })
-    xmlLines.push('    </array>')
-  }
-  
-  if (apiUsageEntries.value.length > 0) {
-    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
-    xmlLines.push('    <array>')
-    apiUsageEntries.value.forEach(entry => {
-      xmlLines.push('        <dict>')
-      xmlLines.push(`            <key>NSPrivacyAccessedAPIType</key>`)
-      xmlLines.push(`            <string>${entry.categoryId}</string>`)
-      if (entry.selectedReasons.length > 0) {
-        xmlLines.push('            <key>NSPrivacyAccessedAPITypeReasons</key>')
-        xmlLines.push('            <array>')
-        entry.selectedReasons.forEach(reason => {
-          xmlLines.push(`                <string>${reason.code}</string>`)
-        })
-        xmlLines.push('            </array>')
-      }
-      xmlLines.push('        </dict>')
-    })
-    xmlLines.push('    </array>')
-  } else {
-    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
-    xmlLines.push('    <array></array>')
-  }
-  
-  xmlLines.push('    <key>NSPrivacyCollectedDataTypes</key>')
-  if (collectedDataTypes.value.length > 0) {
-    xmlLines.push('    <array>')
-    collectedDataTypes.value.forEach(dataType => {
-      xmlLines.push('        <dict>')
-      xmlLines.push('            <key>NSPrivacyCollectedDataType</key>')
-      xmlLines.push(`            <string>${dataType.category}</string>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypeLinkedToUser</key>')
-      xmlLines.push(`            <${dataType.linkedToIdentity ? 'true' : 'false'}/>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypeTracking</key>')
-      xmlLines.push(`            <${dataType.usedForTracking ? 'true' : 'false'}/>`)
-      xmlLines.push('            <key>NSPrivacyCollectedDataTypePurposes</key>')
-      xmlLines.push('            <array>')
-      dataType.purposes.forEach(purpose => {
-        xmlLines.push(`                <string>${purpose}</string>`)
-      })
-      xmlLines.push('            </array>')
-      xmlLines.push('        </dict>')
-    })
-    xmlLines.push('    </array>')
-  } else {
-    xmlLines.push('    <array></array>')
-  }
-  xmlLines.push('</dict>')
-  xmlLines.push('</plist>')
-  
-  return xmlLines.join('\n')
-})
-
-// 剪贴板和下载函数
-async function copyToClipboard() {
-  try {
-    await navigator.clipboard.writeText(generatedXml.value)
-    alert('已复制到剪贴板！')
-  } catch {
-    alert('复制到剪贴板失败')
-  }
-}
-
-function downloadManifest() {
-  const blob = new Blob([generatedXml.value], { type: 'application/xml' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'PrivacyInfo.xcprivacy'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-// 基础状态管理（已在文件开头声明）
 
 // API使用组合的类型定义
 interface ApiReason {
@@ -523,6 +325,259 @@ const availableDataTypes = [
   { id: 'NSPrivacyCollectedDataTypePerformanceData', name: '性能数据', category: 'diagnostics' },
   { id: 'NSPrivacyCollectedDataTypeOtherDiagnosticData', name: '其他诊断数据', category: 'diagnostics' }
 ]
+
+// 可选的使用目的
+const availablePurposes = [
+  { id: 'NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising', name: '第三方广告' },
+  { id: 'NSPrivacyCollectedDataTypePurposeDeveloperAdvertising', name: '开发者广告' },
+  { id: 'NSPrivacyCollectedDataTypePurposeAnalytics', name: '分析' },
+  { id: 'NSPrivacyCollectedDataTypePurposeProductPersonalization', name: '产品个性化' },
+  { id: 'NSPrivacyCollectedDataTypePurposeAppFunctionality', name: '应用功能' },
+  { id: 'NSPrivacyCollectedDataTypePurposeOther', name: '其他目的' }
+]
+
+// API原因按类别分组
+const apiReasonsByCategory = {
+  'NSPrivacyAccessedAPICategoryFileTimestamp': [
+    { id: 'dda9-1', code: 'DDA9.1', description: '声明此原因以向设备使用者显示文件时间戳。出于此原因访问的信息或任何衡生信息不得发送到设备外。', selected: false },
+    { id: 'c617-1', code: 'C617.1', description: '声明此原因以访问应用容器、应用组容器或应用CloudKit容器内文件的时间戳、大小或其他元数据。', selected: false },
+    { id: '3b52-1', code: '3B52.1', description: '声明此原因以访问用户特定授权访问的文件或目录的时间戳、大小或其他元数据，例如使用文档选择器视图控制器。', selected: false },
+    { id: '0a2a-1', code: '0A2A.1', description: '如果你的第三方SDK为应用提供了文件时间戳API的包装函数，并且你仅在应用调用你的包装函数时才访问文件时间戳API，请声明此原因。此原因仅可由第三方SDK声明。', selected: false, thirdPartyOnly: true }
+  ],
+  'NSPrivacyAccessedAPICategorySystemBootTime': [
+    { id: '35f9-1', code: '35F9.1', description: '声明此原因以访问系统启动时间，以测量应用内发生的事件之间的经过时间或执行计算以启用计时器。', selected: false },
+    { id: '8ffb-1', code: '8FFB.1', description: '声明此原因以访问系统启动时间，以为应用内发生的事件计算绝对时间戳，例如与UIKit或AVFoundation框架相关的事件。', selected: false },
+    { id: '3d61-1', code: '3D61.1', description: '如果你的第三方SDK为应用提供了系统启动时间API的包装函数，并且你仅在应用调用你的包装函数时才访问系统启动时间API，请声明此原因。此原因仅可由第三方SDK声明。', selected: false, thirdPartyOnly: true }
+  ],
+  'NSPrivacyAccessedAPICategoryDiskSpace': [
+    { id: 'e174-1', code: 'E174.1', description: '声明此原因以向设备使用者显示磁盘空间信息。磁盘空间可以信息单位（如字节）或时间单位结合媒体类型（如4K视频分钟）显示。', selected: false },
+    { id: '7d9e-1', code: '7D9E.1', description: '声明此原因以检查是否有足够的磁盘空间来写入文件，或检查磁盘空间是否不足，以便在磁盘空间不足时删除文件。', selected: false },
+    { id: '85f4-1', code: '85F4.1', description: '如果你的第三方SDK为应用提供了磁盘空间API的包装函数，并且你仅在应用调用你的包装函数时才访问磁盘空间API，请声明此原因。此原因仅可由第三方SDK声明。', selected: false, thirdPartyOnly: true }
+  ],
+  'NSPrivacyAccessedAPICategoryActiveKeyboards': [
+    { id: '3ec4-1', code: '3EC4.1', description: '声明此原因以访问活动键盘信息，以向设备使用者展示正确的自定义用户界面。', selected: false },
+    { id: '54bd-1', code: '54BD.1', description: '如果你的第三方SDK为应用提供了活动键盘API的包装函数，并且你仅在应用调用你的包装函数时才访问活动键盘API，请声明此原因。此原因仅可由第三方SDK声明。', selected: false, thirdPartyOnly: true }
+  ],
+  'NSPrivacyAccessedAPICategoryUserDefaults': [
+    { id: 'ca92-1', code: 'CA92.1', description: '声明此原因以访问用户默认设置，以读取和写入仅应用本身可访问的信息。', selected: false },
+    { id: '1c8f-1', code: '1C8F.1', description: '声明此原因以访问用户默认设置，以读取和写入可用于识别人员或设备的信息。', selected: false },
+    { id: 'c56d-1', code: 'C56D.1', description: '如果你的第三方SDK为应用提供了用户默认设置API的包装函数，并且你仅在应用调用你的包装函数时才访问用户默认设置API，请声明此原因。此原因仅可由第三方SDK声明。', selected: false, thirdPartyOnly: true }
+  ]
+}
+
+// 获取当前选中分类的可用原因
+const availableReasonsForCurrentCategory = computed(() => {
+  if (!currentApiUsage.value.selectedCategoryId) {
+    return []
+  }
+  return apiReasonsByCategory[currentApiUsage.value.selectedCategoryId as keyof typeof apiReasonsByCategory] || []
+})
+
+// API使用管理函数
+function resetCurrentApiUsage() {
+  currentApiUsage.value.selectedCategoryId = ''
+  currentApiUsage.value.selectedReasons = []
+}
+
+function addApiUsage() {
+  if (!currentApiUsage.value.selectedCategoryId || currentApiUsage.value.selectedReasons.length === 0) {
+    return
+  }
+  
+  const categoryName = availableApiCategories.find(cat => cat.id === currentApiUsage.value.selectedCategoryId)?.name || ''
+  
+  const newEntry: ApiUsageEntry = {
+    id: Date.now().toString(),
+    categoryId: currentApiUsage.value.selectedCategoryId,
+    categoryName: categoryName,
+    selectedReasons: [...currentApiUsage.value.selectedReasons]
+  }
+  
+  apiUsageEntries.value.push(newEntry)
+  resetCurrentApiUsage()
+}
+
+function removeApiUsage(entryId: string) {
+  const index = apiUsageEntries.value.findIndex(entry => entry.id === entryId)
+  if (index > -1) {
+    apiUsageEntries.value.splice(index, 1)
+  }
+}
+
+function toggleCurrentReason(reason: ApiReason) {
+  const index = currentApiUsage.value.selectedReasons.findIndex(r => r.id === reason.id)
+  if (index > -1) {
+    currentApiUsage.value.selectedReasons.splice(index, 1)
+  } else {
+    currentApiUsage.value.selectedReasons.push({ ...reason })
+  }
+}
+
+function isReasonCurrentlySelected(reason: ApiReason) {
+  return currentApiUsage.value.selectedReasons.some(r => r.id === reason.id)
+}
+
+// 数据类型管理函数
+function addDataType() {
+  if (!currentDataType.value.selectedTypeId || currentDataType.value.selectedPurposes.length === 0) {
+    return
+  }
+  
+  const selectedType = availableDataTypes.find(type => type.id === currentDataType.value.selectedTypeId)
+  if (!selectedType) return
+  
+  const newDataType: CollectedDataType = {
+    id: Date.now().toString(),
+    name: selectedType.name,
+    category: selectedType.id,
+    selected: true,
+    linkedToIdentity: currentDataType.value.linkedToIdentity,
+    usedForTracking: currentDataType.value.usedForTracking,
+    purposes: [...currentDataType.value.selectedPurposes]
+  }
+  
+  collectedDataTypes.value.push(newDataType)
+  resetCurrentDataType()
+}
+
+function removeDataType(dataTypeId: string) {
+  const index = collectedDataTypes.value.findIndex(dt => dt.id === dataTypeId)
+  if (index > -1) {
+    collectedDataTypes.value.splice(index, 1)
+  }
+}
+
+function resetCurrentDataType() {
+  currentDataType.value.selectedTypeId = ''
+  currentDataType.value.linkedToIdentity = false
+  currentDataType.value.usedForTracking = false
+  currentDataType.value.selectedPurposes = []
+}
+
+function togglePurpose(purposeId: string) {
+  const index = currentDataType.value.selectedPurposes.indexOf(purposeId)
+  if (index > -1) {
+    currentDataType.value.selectedPurposes.splice(index, 1)
+  } else {
+    currentDataType.value.selectedPurposes.push(purposeId)
+  }
+}
+
+function isPurposeSelected(purposeId: string) {
+  return currentDataType.value.selectedPurposes.includes(purposeId)
+}
+
+function getPurposeName(purposeId: string) {
+  const purpose = availablePurposes.find(p => p.id === purposeId)
+  return purpose ? purpose.name : purposeId
+}
+
+// 域名管理函数
+function addDomain() {
+  const domain = newDomain.value.trim()
+  if (domain && !trackingDomains.value.includes(domain)) {
+    trackingDomains.value.push(domain)
+    newDomain.value = ''
+  }
+}
+
+function removeDomain(index: number) {
+  trackingDomains.value.splice(index, 1)
+}
+
+// 剪贴板和下载函数
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(generatedXml.value)
+    alert('已复制到剪贴板！')
+  } catch {
+    alert('复制到剪贴板失败')
+  }
+}
+
+function downloadManifest() {
+  const blob = new Blob([generatedXml.value], { type: 'application/xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'PrivacyInfo.xcprivacy'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// 生成XML
+const generatedXml = computed(() => {
+  const xmlLines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>'
+  ]
+  
+  if (includePrivacyTracking.value) {
+    xmlLines.push('    <key>NSPrivacyTracking</key>')
+    xmlLines.push('    <true/>')
+  }
+  
+  if (trackingDomains.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyTrackingDomains</key>')
+    xmlLines.push('    <array>')
+    trackingDomains.value.forEach(domain => {
+      xmlLines.push(`        <string>${domain}</string>`)
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  if (apiUsageEntries.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
+    xmlLines.push('    <array>')
+    apiUsageEntries.value.forEach(entry => {
+      xmlLines.push('        <dict>')
+      xmlLines.push(`            <key>NSPrivacyAccessedAPIType</key>`)
+      xmlLines.push(`            <string>${entry.categoryId}</string>`)
+      if (entry.selectedReasons.length > 0) {
+        xmlLines.push('            <key>NSPrivacyAccessedAPITypeReasons</key>')
+        xmlLines.push('            <array>')
+        entry.selectedReasons.forEach(reason => {
+          xmlLines.push(`                <string>${reason.code}</string>`)
+        })
+        xmlLines.push('            </array>')
+      }
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  xmlLines.push('    <key>NSPrivacyCollectedDataTypes</key>')
+  if (collectedDataTypes.value.length > 0) {
+    xmlLines.push('    <array>')
+    collectedDataTypes.value.forEach(dataType => {
+      xmlLines.push('        <dict>')
+      xmlLines.push('            <key>NSPrivacyCollectedDataType</key>')
+      xmlLines.push(`            <string>${dataType.category}</string>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeLinkedToUser</key>')
+      xmlLines.push(`            <${dataType.linkedToIdentity ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeTracking</key>')
+      xmlLines.push(`            <${dataType.usedForTracking ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypePurposes</key>')
+      xmlLines.push('            <array>')
+      dataType.purposes.forEach(purpose => {
+        xmlLines.push(`                <string>${purpose}</string>`)
+      })
+      xmlLines.push('            </array>')
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  } else {
+    xmlLines.push('    <array></array>')
+  }
+  xmlLines.push('</dict>')
+  xmlLines.push('</plist>')
+  
+  return xmlLines.join('\n')
+})
 
 // 可选的使用目的
 const availablePurposes = [
@@ -635,14 +690,7 @@ function addDataType() {
   }
   
   collectedDataTypes.value.push(newDataType)
-  
-  // 重置当前数据类型
-  currentDataType.value = {
-    selectedTypeId: '',
-    linkedToIdentity: false,
-    usedForTracking: false,
-    selectedPurposes: []
-  }
+  resetCurrentDataType()
 }
 
 function removeDataType(dataTypeId: string) {
@@ -650,6 +698,13 @@ function removeDataType(dataTypeId: string) {
   if (index > -1) {
     collectedDataTypes.value.splice(index, 1)
   }
+}
+
+function resetCurrentDataType() {
+  currentDataType.value.selectedTypeId = ''
+  currentDataType.value.linkedToIdentity = false
+  currentDataType.value.usedForTracking = false
+  currentDataType.value.selectedPurposes = []
 }
 
 function togglePurpose(purposeId: string) {
@@ -660,14 +715,139 @@ function togglePurpose(purposeId: string) {
     currentDataType.value.selectedPurposes.push(purposeId)
   }
 }
+
+function isPurposeSelected(purposeId: string) {
+  return currentDataType.value.selectedPurposes.includes(purposeId)
+}
+
+function getPurposeName(purposeId: string) {
+  const purpose = availablePurposes.find(p => p.id === purposeId)
+  return purpose ? purpose.name : purposeId
+}
+
+// 域名管理函数
+function addDomain() {
+  const domain = newDomain.value.trim()
+  if (domain && !trackingDomains.value.includes(domain)) {
+    trackingDomains.value.push(domain)
+    newDomain.value = ''
+  }
+}
+
+function removeDomain(index: number) {
+  trackingDomains.value.splice(index, 1)
+}
+
+// 剪贴板和下载函数
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(generatedXml.value)
+    alert('已复制到剪贴板！')
+  } catch {
+    alert('复制到剪贴板失败')
+  }
+}
+
+function downloadManifest() {
+  const blob = new Blob([generatedXml.value], { type: 'application/xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'PrivacyInfo.xcprivacy'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Generate XML
+const generatedXml = computed(() => {
+  const xmlLines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>'
+  ]
+  
+  if (includePrivacyTracking.value) {
+    xmlLines.push('    <key>NSPrivacyTracking</key>')
+    xmlLines.push('    <true/>')
+  }
+  
+  if (trackingDomains.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyTrackingDomains</key>')
+    xmlLines.push('    <array>')
+    trackingDomains.value.forEach(domain => {
+      xmlLines.push(`        <string>${domain}</string>`)
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  if (apiUsageEntries.value.length > 0) {
+    xmlLines.push('    <key>NSPrivacyAccessedAPITypes</key>')
+    xmlLines.push('    <array>')
+    apiUsageEntries.value.forEach(entry => {
+      xmlLines.push('        <dict>')
+      xmlLines.push(`            <key>NSPrivacyAccessedAPIType</key>`)
+      xmlLines.push(`            <string>${entry.categoryId}</string>`)
+      if (entry.selectedReasons.length > 0) {
+        xmlLines.push('            <key>NSPrivacyAccessedAPITypeReasons</key>')
+        xmlLines.push('            <array>')
+        entry.selectedReasons.forEach(reason => {
+          xmlLines.push(`                <string>${reason.code}</string>`)
+        })
+        xmlLines.push('            </array>')
+      }
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  }
+  
+  xmlLines.push('    <key>NSPrivacyCollectedDataTypes</key>')
+  if (collectedDataTypes.value.length > 0) {
+    xmlLines.push('    <array>')
+    collectedDataTypes.value.forEach(dataType => {
+      xmlLines.push('        <dict>')
+      xmlLines.push('            <key>NSPrivacyCollectedDataType</key>')
+      xmlLines.push(`            <string>${dataType.category}</string>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeLinkedToUser</key>')
+      xmlLines.push(`            <${dataType.linkedToIdentity ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypeTracking</key>')
+      xmlLines.push(`            <${dataType.usedForTracking ? 'true' : 'false'}/>`)
+      xmlLines.push('            <key>NSPrivacyCollectedDataTypePurposes</key>')
+      xmlLines.push('            <array>')
+      dataType.purposes.forEach(purpose => {
+        xmlLines.push(`                <string>${purpose}</string>`)
+      })
+      xmlLines.push('            </array>')
+      xmlLines.push('        </dict>')
+    })
+    xmlLines.push('    </array>')
+  } else {
+    xmlLines.push('    <array></array>')
+  }
+  xmlLines.push('</dict>')
+  xmlLines.push('</plist>')
+  
+  return xmlLines.join('\n')
+})
 </script>
 
 <template>
   <div class="app-container">
     <!-- 头部 -->
     <header class="app-header">
-      <h1>Apple 隐私清单生成器</h1>
-      <p class="subtitle">为您的 iOS 应用生成符合 Apple 要求的隐私清单文件</p>
+      <div class="header-content">
+        <div class="header-text">
+          <h1>Apple 隐私清单生成器</h1>
+          <p class="subtitle">为您的 iOS 应用生成符合 Apple 要求的隐私清单文件</p>
+        </div>
+        <div class="header-actions">
+          <button @click="showImportDialog = true" class="import-btn">
+            📁 导入现有配置
+          </button>
+        </div>
+      </div>
     </header>
 
     <!-- 主要内容区域 -->
@@ -906,7 +1086,6 @@ function togglePurpose(purposeId: string) {
           <div class="preview-header">
             <h2>生成的隐私清单预览</h2>
             <div class="action-buttons">
-              <button @click="showImportDialog = true" class="import-btn">导入XML文件</button>
               <button @click="copyToClipboard" class="copy-btn">复制到剪贴板</button>
               <button @click="downloadManifest" class="download-btn">下载文件</button>
             </div>
@@ -915,62 +1094,75 @@ function togglePurpose(purposeId: string) {
             <pre><code>{{ generatedXml }}</code></pre>
           </div>
         </div>
-
-        <!-- 导入对话框 -->
-        <div v-if="showImportDialog" class="import-dialog-overlay" @click="showImportDialog = false">
-          <div class="import-dialog" @click.stop>
-            <div class="import-dialog-header">
-              <h3>导入隐私清单文件</h3>
-              <button @click="showImportDialog = false" class="close-btn">×</button>
-            </div>
-            
-            <div class="import-dialog-content">
-              <!-- 文件上传区域 -->
-              <div class="upload-area" 
-                   @drop="handleFileDrop" 
-                   @dragover.prevent 
-                   @dragenter.prevent>
-                <input 
-                  type="file" 
-                  accept=".xml,.xcprivacy"
-                  @change="handleFileUpload"
-                  id="file-input"
-                  class="file-input"
-                >
-                <label for="file-input" class="upload-label">
-                  <div class="upload-icon">📁</div>
-                  <div class="upload-text">
-                    <div class="upload-primary">点击选择文件或拖拽到此处</div>
-                    <div class="upload-secondary">支持 .xml 和 .xcprivacy 文件</div>
-                  </div>
-                </label>
-              </div>
-
-              <!-- 文本导入区域 -->
-              <div class="text-import-area">
-                <label for="xml-text">或直接粘贴XML内容：</label>
-                <textarea 
-                  id="xml-text"
-                  v-model="importXmlText" 
-                  placeholder="粘贴您的XML内容到这里..."
-                  class="xml-textarea"
-                ></textarea>
-                <button @click="handleTextImport" :disabled="!importXmlText.trim()" class="import-text-btn">
-                  导入文本内容
-                </button>
-              </div>
-
-              <!-- 状态消息 -->
-              <div v-if="importStatus.message" 
-                   :class="['import-status', importStatus.type]">
-                {{ importStatus.message }}
-                <button @click="clearImportStatus" class="status-close">×</button>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
     </main>
+
+    <!-- 导入对话框 -->
+    <div v-if="showImportDialog" class="modal-overlay" @click="showImportDialog = false">
+      <div class="import-modal" @click.stop>
+        <div class="modal-header">
+          <h3>📁 导入隐私配置文件</h3>
+          <button @click="showImportDialog = false" class="close-btn">×</button>
+        </div>
+        
+        <!-- 文件上传区域 -->
+        <div class="upload-section">
+          <div 
+            class="upload-area" 
+            @dragover.prevent 
+            @drop="handleFileDrop"
+            @dragenter.prevent
+            @dragleave.prevent
+          >
+            <input 
+              type="file" 
+              accept=".xcprivacy,.xml" 
+              @change="handleFileUpload" 
+              id="file-input"
+              class="file-input"
+            />
+            <label for="file-input" class="upload-label">
+              <div class="upload-icon">📄</div>
+              <p class="upload-text">拖拽文件到此处或点击选择文件</p>
+              <p class="upload-hint">支持 .xcprivacy 和 .xml 文件</p>
+            </label>
+          </div>
+        </div>
+        
+        <!-- 分隔线 -->
+        <div class="divider">
+          <span>或</span>
+        </div>
+        
+        <!-- 文本粘贴区域 -->
+        <div class="text-import-section">
+          <label for="xml-text" class="text-label">粘贴 XML 内容：</label>
+          <textarea 
+            id="xml-text"
+            v-model="importXmlText" 
+            placeholder="请粘贴您的隐私清单 XML 内容..."
+            class="xml-textarea"
+            rows="8"
+          ></textarea>
+          <button 
+            @click="handleTextImport" 
+            :disabled="!importXmlText.trim()"
+            class="parse-btn"
+          >
+            解析 XML 文本
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态提示 -->
+    <div v-if="importStatus.message" class="import-status" :class="importStatus.type">
+      <div class="status-content">
+        <span class="status-icon">{{ importStatus.type === 'success' ? '✓' : '⚠' }}</span>
+        <span class="status-message">{{ importStatus.message }}</span>
+        <button @click="clearImportStatus" class="status-close">×</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1039,7 +1231,6 @@ body, html {
   background: var(--gradient-primary);
   color: white;
   padding: 3rem 2rem;
-  text-align: center;
   margin-bottom: 0;
   position: relative;
   overflow: hidden;
@@ -1056,13 +1247,25 @@ body, html {
   pointer-events: none;
 }
 
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1800px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.header-text {
+  text-align: left;
+}
+
 .app-header h1 {
   margin: 0 0 0.5rem 0;
   font-size: 3rem;
   font-weight: 700;
   letter-spacing: -0.03em;
-  position: relative;
-  z-index: 1;
 }
 
 .subtitle {
@@ -1070,10 +1273,90 @@ body, html {
   font-size: 1.25rem;
   opacity: 0.9;
   font-weight: 400;
-  position: relative;
-  z-index: 1;
   max-width: 600px;
-  margin: 0 auto;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.import-btn {
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.import-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.import-btn:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.import-btn:hover::before {
+  left: 100%;
+}
+
+.import-btn:active {
+  transform: translateY(0px);
+}
+
+/* 响应式头部 */
+@media (max-width: 1024px) {
+  .header-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 2rem;
+  }
+  
+  .header-text {
+    text-align: center;
+  }
+  
+  .app-header h1 {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 1.5rem;
+  }
+  
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+  
+  .subtitle {
+    font-size: 1rem;
+  }
+  
+  .import-btn {
+    padding: 0.875rem 1.5rem;
+    font-size: 0.9rem;
+  }
 }
 
 /* 主要内容区域 - 苹果官网风格网格布局 */
@@ -1808,10 +2091,9 @@ body, html {
 }
 
 .copy-btn,
-.download-btn,
-.import-btn {
+.download-btn {
   padding: 0.875rem 2rem;
-  border: 2px solid transparent; /* 为深色模式准备边框 */
+  border: none;
   border-radius: 12px;
   font-size: 1rem;
   font-weight: 600;
@@ -1821,23 +2103,10 @@ body, html {
   overflow: hidden;
 }
 
-.import-btn {
-  background: linear-gradient(135deg, var(--warning-color), #ffb347);
-  color: white;
-  box-shadow: 0 4px 16px rgba(255, 149, 0, 0.3);
-  border-color: #ff9500; /* 橙色边框 */
-}
-
-.import-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(255, 149, 0, 0.4);
-}
-
 .copy-btn {
   background: linear-gradient(135deg, var(--secondary-color), #40d65a);
   color: white;
   box-shadow: 0 4px 16px rgba(52, 199, 89, 0.3);
-  border-color: #40d65a; /* 绿色边框 */
 }
 
 .copy-btn:hover {
@@ -1849,42 +2118,11 @@ body, html {
   background: var(--gradient-primary);
   color: white;
   box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
-  border-color: #4da6ff; /* 蓝色边框 */
 }
 
 .download-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
-}
-
-/* 深色模式下的按钮边框优化 */
-@media (prefers-color-scheme: dark) {
-  .import-btn {
-    border-color: #ff9500;
-    box-shadow: 0 4px 16px rgba(255, 149, 0, 0.4), 0 0 0 1px rgba(255, 149, 0, 0.2);
-  }
-  
-  .import-btn:hover {
-    box-shadow: 0 8px 25px rgba(255, 149, 0, 0.5), 0 0 0 2px rgba(255, 149, 0, 0.3);
-  }
-  
-  .copy-btn {
-    border-color: #40d65a;
-    box-shadow: 0 4px 16px rgba(64, 214, 90, 0.4), 0 0 0 1px rgba(64, 214, 90, 0.2);
-  }
-  
-  .copy-btn:hover {
-    box-shadow: 0 8px 25px rgba(64, 214, 90, 0.5), 0 0 0 2px rgba(64, 214, 90, 0.3);
-  }
-  
-  .download-btn {
-    border-color: #4da6ff;
-    box-shadow: 0 4px 16px rgba(77, 166, 255, 0.4), 0 0 0 1px rgba(77, 166, 255, 0.2);
-  }
-  
-  .download-btn:hover {
-    box-shadow: 0 8px 25px rgba(77, 166, 255, 0.5), 0 0 0 2px rgba(77, 166, 255, 0.3);
-  }
 }
 
 
@@ -1963,240 +2201,316 @@ body, html {
   }
   
   .copy-btn,
-  .download-btn,
-  .import-btn {
+  .download-btn {
     width: 100%;
     text-align: center;
   }
 }
 
-/* 导入对话框样式 */
-.import-dialog-overlay {
+/* 导入功能样式 - 苹果风格 */
+.modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
 }
 
-.import-dialog {
-  background: var(--card-background);
-  border-radius: 16px;
-  width: 90%;
+.import-modal {
+  background: var(--gradient-card);
+  border-radius: 20px;
+  padding: 2.5rem;
   max-width: 600px;
-  max-height: 80vh;
+  width: 100%;
+  max-height: 90vh;
   overflow-y: auto;
-  box-shadow: var(--shadow);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border-color);
+  position: relative;
 }
 
-.import-dialog-header {
+.modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 2rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--border-color);
 }
 
-.import-dialog-header h3 {
+.modal-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .close-btn {
   background: none;
   border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
+  font-size: 2rem;
   color: var(--text-secondary);
-  padding: 0.25rem;
-  border-radius: 4px;
-  transition: all 0.2s;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+  line-height: 1;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .close-btn:hover {
-  background-color: var(--border-color);
-  color: var(--text-primary);
+  color: var(--danger-color);
 }
 
-.import-dialog-content {
-  padding: 2rem;
-}
-
-/* 文件上传区域 */
-.upload-area {
+.upload-section {
   margin-bottom: 2rem;
 }
 
+.upload-area {
+  border: 2px dashed var(--border-color);
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  text-align: center;
+  background: var(--background-color);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area:hover {
+  border-color: var(--primary-color);
+  background: linear-gradient(145deg, var(--background-color), rgba(0, 122, 255, 0.05));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 122, 255, 0.15);
+}
+
 .file-input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .upload-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 2rem;
-  border: 2px dashed var(--border-color);
-  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  background-color: var(--background-color);
-}
-
-.upload-label:hover {
-  border-color: var(--primary-color);
-  background-color: rgba(0, 122, 255, 0.05);
+  display: block;
+  width: 100%;
 }
 
 .upload-icon {
   font-size: 3rem;
   margin-bottom: 1rem;
+  opacity: 0.7;
 }
 
 .upload-text {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.upload-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 2rem 0;
   text-align: center;
 }
 
-.upload-primary {
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
 }
 
-.upload-secondary {
-  font-size: 0.9rem;
+.divider span {
+  padding: 0 1.5rem;
   color: var(--text-secondary);
+  font-weight: 500;
+  background: var(--card-background);
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
 }
 
-/* 文本导入区域 */
-.text-import-area {
-  margin-bottom: 1.5rem;
+.text-import-section {
+  margin-bottom: 1rem;
 }
 
-.text-import-area label {
+.text-label {
   display: block;
   margin-bottom: 0.75rem;
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 1rem;
 }
 
 .xml-textarea {
   width: 100%;
   min-height: 200px;
   padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.4;
+  font-size: 0.875rem;
+  line-height: 1.5;
   background-color: var(--background-color);
   color: var(--text-primary);
   resize: vertical;
-  transition: border-color 0.2s;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .xml-textarea:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+  background-color: var(--card-background);
 }
 
 .xml-textarea::placeholder {
   color: var(--text-secondary);
+  font-style: italic;
 }
 
-.import-text-btn {
-  margin-top: 1rem;
-  padding: 0.75rem 1.5rem;
+.parse-btn {
   background: var(--gradient-primary);
   color: white;
-  border: 2px solid #4da6ff; /* 蓝色边框 */
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
+  width: 100%;
+  margin-top: 1rem;
 }
 
-.import-text-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+.parse-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
 }
 
-.import-text-btn:disabled {
+.parse-btn:disabled {
   background: linear-gradient(135deg, #c6c6c8, #b0b0b0);
-  border-color: #c6c6c8;
+  box-shadow: none;
   cursor: not-allowed;
   transform: none;
 }
 
-/* 状态消息 */
+/* 状态提示样式 */
 .import-status {
-  padding: 1rem;
-  border-radius: 8px;
-  margin-top: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  max-width: 400px;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  z-index: 1001;
+  border: 1px solid;
+  animation: slideIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .import-status.success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background: linear-gradient(145deg, rgba(52, 199, 89, 0.9), rgba(64, 214, 90, 0.9));
+  border-color: var(--secondary-color);
+  color: white;
 }
 
 .import-status.error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background: linear-gradient(145deg, rgba(255, 59, 48, 0.9), rgba(255, 107, 107, 0.9));
+  border-color: var(--danger-color);
+  color: white;
+}
+
+.status-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-icon {
+  font-size: 1.5rem;
+  font-weight: bold;
+  min-width: 1.5rem;
+}
+
+.status-message {
+  flex: 1;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .status-close {
   background: none;
   border: none;
-  font-size: 1.2rem;
-  cursor: pointer;
   color: inherit;
-  padding: 0.25rem;
-  border-radius: 4px;
-  transition: all 0.2s;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+  min-width: 1.25rem;
 }
 
 .status-close:hover {
-  background-color: rgba(0, 0, 0, 0.1);
+  opacity: 1;
 }
 
-/* 深色模式下的导入对话框优化 */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* 深色模式下的导入功能优化 */
 @media (prefers-color-scheme: dark) {
-  .import-dialog {
-    background: var(--card-background);
+  .import-modal {
+    background: var(--gradient-card);
     border: 1px solid var(--border-color);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
   
-  .import-dialog-header {
-    border-bottom-color: var(--border-color);
+  .upload-area {
+    background: var(--card-background);
+    border-color: var(--border-color);
   }
   
-  .import-dialog-header h3 {
-    color: var(--text-primary);
-  }
-  
-  .upload-label:hover {
-    border-color: #0a84ff;
-    background-color: rgba(10, 132, 255, 0.1);
+  .upload-area:hover {
+    background: linear-gradient(145deg, var(--card-background), rgba(0, 122, 255, 0.08));
+    border-color: #4da6ff;
   }
   
   .xml-textarea {
@@ -2206,29 +2520,66 @@ body, html {
   }
   
   .xml-textarea:focus {
-    border-color: #0a84ff;
-    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
-  }
-  
-  .import-text-btn {
     border-color: #4da6ff;
-    box-shadow: 0 0 0 1px rgba(77, 166, 255, 0.2);
+    background-color: var(--background-color);
+  }
+}
+
+/* 响应式导入功能 */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 1rem;
   }
   
-  .import-text-btn:hover:not(:disabled) {
-    box-shadow: 0 4px 12px rgba(77, 166, 255, 0.4), 0 0 0 1px rgba(77, 166, 255, 0.3);
+  .import-modal {
+    padding: 2rem;
+    max-height: 95vh;
   }
   
-  .import-status.success {
-    background-color: rgba(64, 214, 90, 0.2);
-    color: #40d65a;
-    border-color: rgba(64, 214, 90, 0.3);
+  .upload-area {
+    padding: 2rem 1rem;
   }
   
-  .import-status.error {
-    background-color: rgba(255, 85, 85, 0.2);
-    color: #ff5555;
-    border-color: rgba(255, 85, 85, 0.3);
+  .upload-icon {
+    font-size: 2.5rem;
+  }
+  
+  .import-status {
+    top: 1rem;
+    right: 1rem;
+    left: 1rem;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .import-modal {
+    padding: 1.5rem;
+  }
+  
+  .modal-header {
+    margin-bottom: 1.5rem;
+  }
+  
+  .modal-header h3 {
+    font-size: 1.25rem;
+  }
+  
+  .upload-area {
+    padding: 1.5rem 1rem;
+  }
+  
+  .upload-text {
+    font-size: 1rem;
+  }
+  
+  .upload-hint {
+    font-size: 0.8rem;
+  }
+  
+  .xml-textarea {
+    min-height: 150px;
+    font-size: 0.8rem;
   }
 }
 </style>
