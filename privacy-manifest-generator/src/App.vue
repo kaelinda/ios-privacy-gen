@@ -348,3 +348,1211 @@ const generatedXml = computed(() => {
   return xmlLines.join('\n')
 })
 </script>
+
+<template>
+  <div class="app-container">
+    <!-- 头部 -->
+    <header class="app-header">
+      <h1>Apple 隐私清单生成器</h1>
+      <p class="subtitle">为您的 iOS 应用生成符合 Apple 要求的隐私清单文件</p>
+    </header>
+
+    <!-- 主要内容区域 -->
+    <main class="main-content">
+      <!-- 左侧配置面板 -->
+      <section class="config-panel">
+        <!-- 隐私跟踪设置 -->
+        <div class="card">
+          <h2>隐私跟踪设置</h2>
+          <div class="form-group">
+            <label class="checkbox-container">
+              <input 
+                type="checkbox" 
+                v-model="includePrivacyTracking"
+              >
+              <span class="checkmark"></span>
+              应用是否包含隐私跟踪
+            </label>
+          </div>
+        </div>
+
+        <!-- 跟踪域名 -->
+        <div class="card">
+          <h2>跟踪域名</h2>
+          <div class="form-group">
+            <div class="input-group">
+              <input
+                type="text"
+                v-model="newDomain"
+                placeholder="输入域名 (例如: analytics.example.com)"
+                @keyup.enter="addDomain"
+                class="domain-input"
+              >
+              <button @click="addDomain" class="add-btn">添加</button>
+            </div>
+          </div>
+          <div class="domain-list" v-if="trackingDomains.length > 0">
+            <div 
+              v-for="(domain, index) in trackingDomains" 
+              :key="index" 
+              class="domain-item"
+            >
+              <span>{{ domain }}</span>
+              <button @click="removeDomain(index)" class="remove-btn">删除</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- API 使用配置 -->
+        <div class="card">
+          <h2>API 使用配置</h2>
+          <div class="form-group">
+            <label for="api-category">选择 API 分类：</label>
+            <select 
+              id="api-category"
+              v-model="currentApiUsage.selectedCategoryId"
+              class="select-input"
+            >
+              <option value="">请选择 API 分类</option>
+              <option 
+                v-for="category in availableApiCategories" 
+                :key="category.id" 
+                :value="category.id"
+              >
+                {{ category.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- 使用原因选择 -->
+          <div v-if="currentApiUsage.selectedCategoryId" class="form-group">
+            <label>选择使用原因：</label>
+            <div class="reason-list">
+              <div 
+                v-for="reason in availableReasonsForCurrentCategory" 
+                :key="reason.id" 
+                class="reason-item"
+                :class="{ 'third-party-only': reason.thirdPartyOnly }"
+              >
+                <label class="checkbox-container">
+                  <input 
+                    type="checkbox" 
+                    :checked="isReasonCurrentlySelected(reason)"
+                    @change="toggleCurrentReason(reason)"
+                  >
+                  <span class="checkmark"></span>
+                  <div class="reason-content">
+                    <strong>{{ reason.code }}</strong>
+                    <p>{{ reason.description }}</p>
+                    <span v-if="reason.thirdPartyOnly" class="third-party-badge">仅限第三方 SDK</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <button 
+              @click="addApiUsage" 
+              :disabled="currentApiUsage.selectedReasons.length === 0"
+              class="add-api-btn"
+            >
+              添加 API 使用组合
+            </button>
+          </div>
+
+          <!-- 已添加的 API 使用列表 -->
+          <div v-if="apiUsageEntries.length > 0" class="added-apis">
+            <h3>已添加的 API 使用：</h3>
+            <div 
+              v-for="entry in apiUsageEntries" 
+              :key="entry.id" 
+              class="api-entry"
+            >
+              <div class="api-entry-header">
+                <h4>{{ entry.categoryName }}</h4>
+                <button @click="removeApiUsage(entry.id)" class="remove-btn">删除</button>
+              </div>
+              <div class="api-reasons">
+                <div 
+                  v-for="reason in entry.selectedReasons" 
+                  :key="reason.id" 
+                  class="reason-tag"
+                >
+                  {{ reason.code }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 收集的数据类型 -->
+        <div class="card">
+          <h2>收集的数据类型</h2>
+          <div class="form-group">
+            <label for="data-type">选择数据类型：</label>
+            <select 
+              id="data-type"
+              v-model="currentDataType.selectedTypeId"
+              class="select-input"
+            >
+              <option value="">请选择数据类型</option>
+              <option 
+                v-for="dataType in availableDataTypes" 
+                :key="dataType.id" 
+                :value="dataType.id"
+              >
+                {{ dataType.name }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="currentDataType.selectedTypeId" class="data-type-config">
+            <div class="form-group">
+              <label class="checkbox-container">
+                <input 
+                  type="checkbox" 
+                  v-model="currentDataType.linkedToIdentity"
+                >
+                <span class="checkmark"></span>
+                与用户身份关联
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-container">
+                <input 
+                  type="checkbox" 
+                  v-model="currentDataType.usedForTracking"
+                >
+                <span class="checkmark"></span>
+                用于跟踪
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label>使用目的：</label>
+              <div class="purpose-list">
+                <label 
+                  v-for="purpose in availablePurposes" 
+                  :key="purpose.id" 
+                  class="checkbox-container purpose-item"
+                >
+                  <input 
+                    type="checkbox" 
+                    :checked="isPurposeSelected(purpose.id)"
+                    @change="togglePurpose(purpose.id)"
+                  >
+                  <span class="checkmark"></span>
+                  {{ purpose.name }}
+                </label>
+              </div>
+            </div>
+
+            <button 
+              @click="addDataType" 
+              :disabled="currentDataType.selectedPurposes.length === 0"
+              class="add-data-btn"
+            >
+              添加数据类型
+            </button>
+          </div>
+
+          <!-- 已添加的数据类型列表 -->
+          <div v-if="collectedDataTypes.length > 0" class="added-data-types">
+            <h3>已添加的数据类型：</h3>
+            <div 
+              v-for="dataType in collectedDataTypes" 
+              :key="dataType.id" 
+              class="data-type-entry"
+            >
+              <div class="data-type-header">
+                <h4>{{ dataType.name }}</h4>
+                <button @click="removeDataType(dataType.id)" class="remove-btn">删除</button>
+              </div>
+              <div class="data-type-details">
+                <div class="data-type-flags">
+                  <span v-if="dataType.linkedToIdentity" class="flag linked">身份关联</span>
+                  <span v-if="dataType.usedForTracking" class="flag tracking">用于跟踪</span>
+                </div>
+                <div class="data-type-purposes">
+                  <span 
+                    v-for="purposeId in dataType.purposes" 
+                    :key="purposeId" 
+                    class="purpose-tag"
+                  >
+                    {{ getPurposeName(purposeId) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧预览面板 -->
+      <section class="preview-panel">
+        <div class="card">
+          <div class="preview-header">
+            <h2>生成的隐私清单预览</h2>
+            <div class="action-buttons">
+              <button @click="copyToClipboard" class="copy-btn">复制到剪贴板</button>
+              <button @click="downloadManifest" class="download-btn">下载文件</button>
+            </div>
+          </div>
+          <div class="xml-preview">
+            <pre><code>{{ generatedXml }}</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</template>
+
+<style scoped>
+/* 全局样式重置和背景色修复 - 苹果官方配色方案 */
+:root {
+  /* 苹果官方主色调 */
+  --primary-color: #007aff; /* 苹果蓝 */
+  --secondary-color: #34c759; /* 苹果绿 */
+  --danger-color: #ff3b30; /* 苹果红 */
+  --warning-color: #ff9500; /* 苹果橙 */
+  
+  /* 浅色模式 - 苹果官网风格 */
+  --background-color: #f5f5f7; /* 苹果浅灰背景 */
+  --card-background: #ffffff;
+  --border-color: #d2d2d7; /* 苹果边框灰 */
+  --text-primary: #1d1d1f; /* 苹果深色文字 */
+  --text-secondary: #86868b; /* 苹果次要文字 */
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --border-radius: 12px;
+  
+  /* 苹果特色渐变色 */
+  --gradient-primary: linear-gradient(135deg, #007aff 0%, #5856d6 100%);
+  --gradient-card: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+/* 深色模式适配 - 苹果官网深色风格 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #000000; /* 苹果纯黑背景 */
+    --card-background: #1c1c1e; /* 苹果深灰卡片 */
+    --border-color: #38383a; /* 苹果深色边框 */
+    --text-primary: #f2f2f7; /* 苹果浅色文字 */
+    --text-secondary: #8e8e93; /* 苹果次要文字深色版 */
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    
+    /* 深色模式渐变 */
+    --gradient-primary: linear-gradient(135deg, #0a84ff 0%, #64d2ff 100%);
+    --gradient-card: linear-gradient(145deg, #1c1c1e 0%, #2c2c2e 100%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body, html {
+  background-color: var(--background-color) !important;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text-primary);
+}
+
+/* 应用容器 - 最大化利用宽度 */
+.app-container {
+  min-height: 100vh;
+  background-color: var(--background-color);
+  padding: 0;
+  max-width: 1800px; /* 支持超宽屏 */
+  margin: 0 auto;
+}
+
+/* 头部样式 - 苹果官网风格 */
+.app-header {
+  background: var(--gradient-primary);
+  color: white;
+  padding: 3rem 2rem;
+  text-align: center;
+  margin-bottom: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.app-header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  position: relative;
+  z-index: 1;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 1.25rem;
+  opacity: 0.9;
+  font-weight: 400;
+  position: relative;
+  z-index: 1;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* 主要内容区域 - 苹果官网风格网格布局 */
+.main-content {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr;
+  gap: 2.5rem;
+  padding: 3rem 2rem;
+  max-width: 100%;
+  background: var(--background-color);
+  margin-top: -1rem; /* 与头部连接 */
+  border-radius: 20px 20px 0 0; /* 苹果式圆角 */
+  position: relative;
+  z-index: 1;
+}
+
+/* 响应式设计 - 最大化利用不同屏幕宽度 */
+@media (min-width: 1600px) {
+  .main-content {
+    grid-template-columns: 1.5fr 0.5fr;
+    gap: 3rem;
+    padding: 0 3rem 3rem 3rem;
+  }
+  .app-header {
+    padding: 3rem 3rem;
+  }
+}
+
+@media (max-width: 1400px) {
+  .main-content {
+    grid-template-columns: 1.3fr 0.7fr;
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 0 1.5rem 1.5rem 1.5rem;
+  }
+  .app-header {
+    padding: 1.5rem;
+  }
+  .app-header h1 {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 0 1rem 1rem 1rem;
+    gap: 1rem;
+  }
+  .app-header {
+    padding: 1rem;
+  }
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 0 0.75rem 0.75rem 0.75rem;
+  }
+  .app-header {
+    padding: 0.75rem;
+  }
+}
+
+/* 配置面板和预览面板 */
+.config-panel,
+.preview-panel {
+  width: 100%;
+}
+
+/* 卡片样式 - 苹果官网风格 */
+.card {
+  background: var(--gradient-card);
+  border-radius: 16px; /* 苹果式大圆角 */
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  pointer-events: none;
+}
+
+.card h2 {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.card h3 {
+  margin: 2rem 0 1rem 0;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* 深色模式下的卡片优化 */
+@media (prefers-color-scheme: dark) {
+  .card {
+    background: var(--gradient-card);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  }
+  
+  .card::before {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  }
+  
+  .card h2,
+  .card h3 {
+    color: var(--text-primary);
+  }
+}
+
+/* 表单组件 */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* 深色模式下的表单优化 */
+@media (prefers-color-scheme: dark) {
+  .form-group label {
+    color: #ffffff;
+    font-weight: 600;
+  }
+}
+
+.select-input {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font-size: 1rem;
+  background-color: var(--card-background);
+  color: var(--text-primary);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  backdrop-filter: blur(10px);
+}
+
+.select-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+
+/* 输入组 */
+.input-group {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  align-items: center; /* 垂直居中对齐 */
+}
+
+.domain-input {
+  flex: 1;
+  padding: 0.75rem 1rem; /* 减少垂直内边距 */
+  border: 1px solid var(--border-color);
+  border-radius: 10px; /* 稍微减小圆角 */
+  font-size: 1rem;
+  background-color: var(--card-background);
+  color: var(--text-primary);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  backdrop-filter: blur(10px);
+  height: 44px; /* 固定高度，苹果标准触控高度 */
+}
+
+.domain-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1); /* 减小光晕 */
+  transform: translateY(-1px);
+}
+
+.domain-input::placeholder {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+
+/* 按钮样式 - 苹果官网风格 */
+.add-btn,
+.add-api-btn,
+.add-data-btn {
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  padding: 0.875rem 2rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+  height: 44px; /* 与输入框高度一致 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 跟踪域名模块的添加按钮特别优化 */
+.add-btn {
+  padding: 0 1.5rem; /* 减少水平内边距 */
+  border-radius: 10px; /* 与输入框圆角一致 */
+  font-size: 0.9rem; /* 稍微减小字体 */
+  min-width: 80px; /* 最小宽度 */
+}
+
+.add-btn::before,
+.add-api-btn::before,
+.add-data-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.add-btn:hover::before,
+.add-api-btn:hover::before,
+.add-data-btn:hover::before {
+  left: 100%;
+}
+
+.add-btn:hover,
+.add-api-btn:hover,
+.add-data-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
+}
+
+.add-btn:active,
+.add-api-btn:active,
+.add-data-btn:active {
+  transform: translateY(0px);
+}
+
+.add-btn:disabled,
+.add-api-btn:disabled,
+.add-data-btn:disabled {
+  background: linear-gradient(135deg, #c6c6c8, #b0b0b0);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.remove-btn {
+  background: linear-gradient(135deg, var(--danger-color), #ff6b6b);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.3);
+}
+
+.remove-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+}
+
+
+/* 复选框样式 */
+.checkbox-container {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  position: relative;
+  padding-left: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.checkbox-container input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkmark {
+  position: absolute;
+  top: 0.125rem;
+  left: 0;
+  height: 1.25rem;
+  width: 1.25rem;
+  background-color: var(--card-background);
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.checkbox-container:hover input ~ .checkmark {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.checkbox-container .checkmark:after {
+  left: 4px;
+  top: 1px;
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 3px 3px 0; /* 增加勾选符号粗细 */
+  transform: rotate(45deg);
+}
+
+/* 深色模式下的复选框优化 */
+@media (prefers-color-scheme: dark) {
+  .checkmark {
+    border: 2px solid #606060; /* 更明显的边框 */
+    background-color: #3a3a3a; /* 更明显的背景 */
+  }
+  
+  .checkbox-container:hover input ~ .checkmark {
+    border-color: #4da6ff;
+    background-color: #404040;
+    box-shadow: 0 0 0 2px rgba(77, 166, 255, 0.3);
+  }
+  
+  .checkbox-container input:checked ~ .checkmark {
+    background-color: #007aff;
+    border-color: #007aff;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.4);
+  }
+}
+
+/* 域名列表 */
+.domain-list {
+  margin-top: 1.5rem;
+}
+
+.domain-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background-color: var(--background-color);
+  border: 2px solid var(--border-color); /* 增强边框 */
+  border-radius: 12px;
+  margin-bottom: 1rem; /* 增加间距 */
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 添加阴影 */
+}
+
+.domain-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.domain-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--warning-color), var(--danger-color));
+  border-radius: 12px 12px 0 0;
+}
+
+.domain-item span {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+/* 深色模式下的域名条目优化 */
+@media (prefers-color-scheme: dark) {
+  .domain-item {
+    background-color: var(--card-background);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+  
+  .domain-item:hover {
+    border-color: #0a84ff;
+    box-shadow: 0 6px 20px rgba(10, 132, 255, 0.25);
+  }
+  
+  .domain-item span {
+    color: var(--text-primary);
+  }
+}
+
+/* API 使用条目 */
+.reason-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  background-color: var(--background-color);
+}
+
+.reason-item {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: var(--card-background);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.reason-item.third-party-only {
+  border-left: 4px solid var(--warning-color);
+}
+
+.reason-content {
+  flex: 1;
+}
+
+.reason-content strong {
+  color: var(--primary-color);
+  font-size: 1rem;
+}
+
+.reason-content p {
+  margin: 0.5rem 0 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.third-party-badge {
+  display: inline-block;
+  background-color: var(--warning-color);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+}
+
+/* 已添加的 API 列表 */
+.added-apis {
+  margin-top: 1.5rem;
+}
+
+.api-entry {
+  background-color: var(--background-color);
+  border: 2px solid var(--border-color); /* 增强边框 */
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem; /* 增加间距 */
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 添加阴影 */
+}
+
+.api-entry:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.api-entry::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  border-radius: 12px 12px 0 0;
+}
+
+/* 深色模式下的API条目优化 */
+@media (prefers-color-scheme: dark) {
+  .api-entry {
+    background-color: var(--card-background);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+  
+  .api-entry:hover {
+    border-color: #0a84ff;
+    box-shadow: 0 6px 20px rgba(10, 132, 255, 0.25);
+  }
+}
+
+.api-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color); /* 添加分隔线 */
+}
+
+.api-entry-header h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.api-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-color); /* 添加虚线分隔 */
+}
+
+.reason-tag {
+  background: linear-gradient(135deg, var(--primary-color), #5856d6);
+  color: white;
+  padding: 0.375rem 1rem;
+  border-radius: 18px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.reason-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+}
+
+/* 数据类型配置 */
+.data-type-config {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.purpose-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.purpose-item {
+  margin-bottom: 0.5rem;
+}
+
+/* 已添加的数据类型 */
+.added-data-types {
+  margin-top: 1.5rem;
+}
+
+.data-type-entry {
+  background-color: var(--background-color);
+  border: 2px solid var(--border-color); /* 增强边框 */
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem; /* 增加间距 */
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); /* 添加阴影 */
+}
+
+.data-type-entry:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.data-type-entry::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  border-radius: 12px 12px 0 0;
+}
+
+/* 深色模式下的数据类型条目优化 */
+@media (prefers-color-scheme: dark) {
+  .data-type-entry {
+    background-color: var(--card-background);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+  
+  .data-type-entry:hover {
+    border-color: #0a84ff;
+    box-shadow: 0 6px 20px rgba(10, 132, 255, 0.25);
+  }
+}
+
+.data-type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color); /* 添加分隔线 */
+}
+
+.data-type-header h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.data-type-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; /* 增加间距 */
+}
+
+.data-type-flags {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.flag {
+  padding: 0.375rem 0.875rem; /* 增加内边距 */
+  border-radius: 20px; /* 更圆润的边框 */
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.flag.linked {
+  background: linear-gradient(135deg, var(--secondary-color), #40d65a);
+  color: white;
+}
+
+.flag.tracking {
+  background: linear-gradient(135deg, var(--warning-color), #ffb340);
+  color: white;
+}
+
+.data-type-purposes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-color); /* 添加虚线分隔 */
+}
+
+.purpose-tag {
+  background: linear-gradient(135deg, var(--primary-color), #5856d6);
+  color: white;
+  padding: 0.375rem 1rem;
+  border-radius: 18px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.purpose-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+}
+
+/* 预览面板 */
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.copy-btn,
+.download-btn {
+  padding: 0.875rem 2rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+}
+
+.copy-btn {
+  background: linear-gradient(135deg, var(--secondary-color), #40d65a);
+  color: white;
+  box-shadow: 0 4px 16px rgba(52, 199, 89, 0.3);
+}
+
+.copy-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(52, 199, 89, 0.4);
+}
+
+.download-btn {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
+}
+
+.download-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
+}
+
+
+.xml-preview {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.xml-preview pre {
+  margin: 0;
+  padding: 1.5rem;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #d4d4d4;
+  background-color: transparent;
+}
+
+/* 深色模式下的XML预览优化 */
+@media (prefers-color-scheme: dark) {
+  .xml-preview {
+    background-color: #0d1117;
+    border-color: var(--border-color);
+  }
+  
+  .xml-preview pre {
+    color: #e6edf3;
+  }
+}
+
+/* 浅色模式下的XML预览 */
+@media (prefers-color-scheme: light) {
+  .xml-preview {
+    background-color: #f6f8fa;
+    border-color: var(--border-color);
+  }
+  
+  .xml-preview pre {
+    color: #24292f;
+  }
+}
+
+.xml-preview code {
+  font-family: inherit;
+  color: inherit;
+  background-color: transparent;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .preview-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .action-buttons {
+    justify-content: center;
+  }
+  
+  .purpose-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .xml-preview pre {
+    font-size: 0.75rem;
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .action-buttons {
+    flex-direction: column;
+  }
+  
+  .copy-btn,
+  .download-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+</style>
