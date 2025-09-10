@@ -762,13 +762,15 @@ function togglePurpose(purposeId: string) {
                 </label>
               </div>
             </div>
-            <button 
-              @click="addApiUsage" 
-              :disabled="currentApiUsage.selectedReasons.length === 0"
-              class="add-api-btn"
-            >
-              添加 API 使用组合
-            </button>
+            <div class="button-container">
+              <button 
+                @click="addApiUsage" 
+                :disabled="currentApiUsage.selectedReasons.length === 0"
+                class="add-api-btn"
+              >
+                添加 API 使用组合
+              </button>
+            </div>
           </div>
 
           <!-- 已添加的 API 使用列表 -->
@@ -859,13 +861,15 @@ function togglePurpose(purposeId: string) {
               </div>
             </div>
 
-            <button 
-              @click="addDataType" 
-              :disabled="currentDataType.selectedPurposes.length === 0"
-              class="add-data-btn"
-            >
-              添加数据类型
-            </button>
+            <div class="button-container">
+              <button 
+                @click="addDataType" 
+                :disabled="currentDataType.selectedPurposes.length === 0"
+                class="add-data-btn"
+              >
+                添加数据类型
+              </button>
+            </div>
           </div>
 
           <!-- 已添加的数据类型列表 -->
@@ -1233,20 +1237,47 @@ body, html {
 .select-input {
   width: 100%;
   padding: 1rem;
-  border: 1px solid var(--border-color);
+  border: 2px solid var(--border-color); /* 增强边框厚度 */
   border-radius: 12px;
   font-size: 1rem;
   background-color: var(--card-background);
   color: var(--text-primary);
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); /* 添加轻微阴影 */
+  cursor: pointer;
+}
+
+.select-input:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.1);
+  transform: translateY(-1px);
 }
 
 .select-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
   transform: translateY(-1px);
+}
+
+/* 深色模式下的选择器优化 */
+@media (prefers-color-scheme: dark) {
+  .select-input {
+    border: 2px solid #4a4a4a; /* 更明显的边框颜色 */
+    background-color: #2c2c2e; /* 稍亮背景色 */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  
+  .select-input:hover {
+    border-color: #4da6ff;
+    box-shadow: 0 2px 6px rgba(77, 166, 255, 0.2);
+  }
+  
+  .select-input:focus {
+    border-color: #4da6ff; /* 深色模式下的聚焦高亮效果 */
+    box-shadow: 0 0 0 3px rgba(77, 166, 255, 0.2);
+  }
 }
 
 
@@ -1260,21 +1291,22 @@ body, html {
 
 .domain-input {
   flex: 1;
-  padding: 0.75rem 1rem; /* 减少垂直内边距 */
-  border: 1px solid var(--border-color);
-  border-radius: 10px; /* 稍微减小圆角 */
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color); /* 增强边框厚度 */
+  border-radius: 10px;
   font-size: 1rem;
   background-color: var(--card-background);
   color: var(--text-primary);
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   backdrop-filter: blur(10px);
-  height: 44px; /* 固定高度，苹果标准触控高度 */
+  height: 44px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); /* 添加轻微阴影 */
 }
 
 .domain-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1); /* 减小光晕 */
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
   transform: translateY(-1px);
 }
 
@@ -1283,6 +1315,32 @@ body, html {
   font-weight: 400;
 }
 
+/* 深色模式下的域名输入框优化 */
+@media (prefers-color-scheme: dark) {
+  .domain-input {
+    border: 2px solid #4a4a4a; /* 更明显的边框颜色 */
+    background-color: #2c2c2e; /* 稍亮背景色 */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  
+  .domain-input:focus {
+    border-color: #4da6ff;
+    box-shadow: 0 0 0 3px rgba(77, 166, 255, 0.2);
+  }
+  
+  .domain-input::placeholder {
+    color: #8e8e93;
+  }
+}
+
+
+/* 按钮容器 - 实现左右居中对齐 */
+.button-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+  width: 100%;
+}
 
 /* 按钮样式 - 苹果官网风格 */
 .add-btn,
