@@ -82,7 +82,7 @@ npm run preview
 ## 📁 项目结构
 
 ```
-.
+privacy-manifest-generator/
 ├── src/
 │   ├── components/          # Vue 组件
 │   │   ├── AppHeader.vue           # 应用头部
@@ -99,8 +99,7 @@ npm run preview
 ├── public/                  # 公共资源
 ├── sample-privacy.xcprivacy # 示例隐私清单文件
 ├── package.json             # 项目配置
-├── vite.config.ts           # Vite 配置
-└── README.md                # 项目说明文档
+└── vite.config.ts           # Vite 配置
 ```
 
 ## 🔧 可用命令
