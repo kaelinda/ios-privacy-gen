@@ -1,0 +1,145 @@
+---
+description: "构建、测试和部署相关配置说明"
+---
+
+# 构建和部署指南
+
+## 构建工具配置
+
+### Vite 配置
+- **配置文件**: [vite.config.ts](mdc:privacy-manifest-generator/vite.config.ts)
+- **开发服务器**: 支持热重载和快速刷新
+- **构建优化**: 自动代码分割和压缩
+- **插件集成**: Vue 3 支持和开发工具集成
+
+### TypeScript 配置
+- **主配置**: [tsconfig.json](mdc:privacy-manifest-generator/tsconfig.json)
+- **应用配置**: [tsconfig.app.json](mdc:privacy-manifest-generator/tsconfig.app.json)
+- **Node 配置**: [tsconfig.node.json](mdc:privacy-manifest-generator/tsconfig.node.json)
+- **严格模式**: 启用所有严格类型检查
+
+## 开发命令
+
+### 常用脚本
+```bash
+# 开发环境启动
+npm run dev
+
+# 生产构建
+npm run build
+
+# 类型检查
+npm run type-check
+
+# 代码规范检查
+npm run lint
+
+# 预览构建结果
+npm run preview
+```
+
+### 构建流程
+1. **类型检查** - `vue-tsc --build` 检查 TypeScript 类型
+2. **代码构建** - `vite build` 编译和打包代码
+3. **资源优化** - 自动压缩 CSS、JS 和图片资源
+4. **输出生成** - 生成到 `dist/` 目录
+
+## 代码质量保证
+
+### ESLint 配置
+- **配置文件**: [eslint.config.ts](mdc:privacy-manifest-generator/eslint.config.ts)
+- **规则集**: Vue 3 + TypeScript 推荐规则
+- **自动修复**: 支持 `--fix` 参数自动修复问题
+- **集成编辑器**: VS Code 实时检查和修复
+
+### 类型检查
+- **编译时检查**: 构建过程中自动类型检查
+- **开发时检查**: 编辑器实时类型提示
+- **严格模式**: 防止类型相关的运行时错误
+
+## 环境要求
+
+### Node.js 版本
+- **最低要求**: Node.js ^20.19.0 || >=22.12.0
+- **推荐版本**: 使用最新 LTS 版本
+- **包管理器**: 使用 npm（已有 package-lock.json）
+
+### 开发工具
+- **IDE**: VS Code + Volar 插件
+- **浏览器**: 现代浏览器支持 ES6+
+- **调试工具**: Vue DevTools 浏览器扩展
+
+## 部署配置
+
+### 静态文件部署
+```bash
+# 构建生产版本
+npm run build
+
+# 部署 dist/ 目录到静态文件服务器
+# 支持 GitHub Pages、Netlify、Vercel 等平台
+```
+
+### 服务器配置
+- **路由处理**: 单页应用需要配置 fallback 到 index.html
+- **MIME 类型**: 确保 .xcprivacy 文件正确的 Content-Type
+- **缓存策略**: 静态资源设置适当的缓存头
+
+### 构建优化
+
+#### 资源优化
+- **代码分割**: Vite 自动进行 chunk 分割
+- **Tree Shaking**: 自动移除未使用的代码
+- **资源压缩**: 自动压缩 JS、CSS、HTML
+- **图片优化**: 支持现代图片格式
+
+#### 性能监控
+- **构建分析**: 使用 `npm run build -- --analyze` 分析包大小
+- **加载性能**: 监控首屏加载时间
+- **运行时性能**: 使用浏览器开发工具检查
+
+## CI/CD 建议
+
+### 自动化流程
+```yaml
+# GitHub Actions 示例
+name: Build and Deploy
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - run: npm ci
+    - run: npm run type-check
+    - run: npm run lint
+    - run: npm run build
+    - name: Deploy
+      # 部署到目标平台
+```
+
+### 质量检查
+- **代码检查**: ESLint 和 TypeScript 检查
+- **构建测试**: 确保构建过程无错误
+- **部署验证**: 验证部署后的功能正常
+
+## 故障排除
+
+### 常见问题
+1. **Node 版本不兼容**: 检查 package.json 中的 engines 字段
+2. **依赖冲突**: 删除 node_modules 和 package-lock.json 重新安装
+3. **类型错误**: 检查 TypeScript 配置和类型定义
+4. **构建失败**: 查看详细错误日志，检查代码语法
+
+### 调试技巧
+- 使用 `npm run dev` 开发模式调试
+- 使用浏览器开发工具检查网络请求
+- 使用 Vue DevTools 调试组件状态
+- 检查控制台错误和警告信息
