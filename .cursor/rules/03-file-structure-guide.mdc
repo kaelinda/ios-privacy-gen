@@ -1,0 +1,111 @@
+---
+description: "项目文件结构组织和命名规范"
+---
+
+# 文件结构指南
+
+## 项目根目录结构
+```
+privacy-manifest-generator/
+├── src/                    # 源代码目录
+│   ├── assets/            # 静态资源
+│   ├── components/        # 可复用组件 (当前项目暂未使用)
+│   ├── views/             # 页面级组件 (当前项目暂未使用)
+│   ├── stores/            # Pinia 状态管理 (当前项目暂未使用)
+│   ├── router/            # 路由配置 (当前项目暂未使用)
+│   ├── utils/             # 工具函数 (当前项目暂未使用)
+│   ├── types/             # TypeScript 类型定义 (当前项目暂未使用)
+│   ├── App.vue            # 根组件
+│   └── main.ts            # 应用入口文件
+├── public/                # 公共静态文件
+├── dist/                  # 构建输出目录
+├── node_modules/          # 依赖包
+├── .cursor/               # Cursor IDE 配置
+│   └── rules/             # Cursor 规则文件
+├── package.json           # 项目配置和依赖
+├── vite.config.ts         # Vite 构建配置
+├── tsconfig.json          # TypeScript 配置
+├── eslint.config.ts       # ESLint 配置
+└── README.md              # 项目说明文档
+```
+
+## 核心文件说明
+
+### 入口文件
+- **[main.ts](mdc:privacy-manifest-generator/src/main.ts)** - 应用启动入口，初始化 Vue 应用
+- **[App.vue](mdc:privacy-manifest-generator/src/App.vue)** - 根组件，包含完整的隐私清单生成器功能
+
+### 配置文件
+- **[package.json](mdc:privacy-manifest-generator/package.json)** - 项目依赖和脚本配置
+- **[vite.config.ts](mdc:privacy-manifest-generator/vite.config.ts)** - Vite 构建工具配置
+- **[tsconfig.json](mdc:privacy-manifest-generator/tsconfig.json)** - TypeScript 编译配置
+- **[eslint.config.ts](mdc:privacy-manifest-generator/eslint.config.ts)** - 代码规范检查配置
+
+### 静态资源
+- **[src/assets/](mdc:privacy-manifest-generator/src/assets/)** - CSS 样式和图标资源
+  - `main.css` - 全局样式
+  - `base.css` - 基础样式重置
+  - `logo.svg` - 应用图标
+
+## 文件命名规范
+
+### Vue 组件
+- 使用 PascalCase 命名：`MyComponent.vue`
+- 单文件组件使用 `.vue` 扩展名
+- 页面级组件放在 `views/` 目录
+- 可复用组件放在 `components/` 目录
+
+### TypeScript 文件
+- 使用 camelCase 命名：`utilityFunction.ts`
+- 类型定义文件使用 `.d.ts` 扩展名
+- 工具函数放在 `utils/` 目录
+- 类型定义放在 `types/` 目录
+
+### 样式文件
+- 使用 kebab-case 命名：`component-styles.css`
+- 全局样式放在 `assets/` 目录
+- 组件样式使用 `<style scoped>`
+
+## 目录组织原则
+
+### 按功能分组
+- 相关功能的文件放在同一目录
+- 避免过深的目录嵌套（建议不超过 3 层）
+- 大型功能模块可创建专门的子目录
+
+### 按类型分组
+- 同类型文件放在对应目录
+- 保持目录结构的一致性
+- 便于文件查找和维护
+
+## 当前项目特点
+
+### 单页应用结构
+- 所有功能集中在 `App.vue` 中
+- 适合小型工具类应用
+- 代码逻辑清晰，便于维护
+
+### 模块化潜力
+- 已配置 Pinia 和 Vue Router
+- 可根据需要拆分为多页面应用
+- 支持功能模块的独立开发
+
+## 扩展建议
+
+### 组件拆分
+如果功能复杂度增加，建议拆分为：
+- `PrivacyTrackingSection.vue` - 隐私跟踪配置
+- `TrackingDomainsSection.vue` - 跟踪域名管理
+- `ApiUsageSection.vue` - API 使用配置
+- `DataTypesSection.vue` - 数据类型配置
+- `XmlPreviewSection.vue` - XML 预览面板
+
+### 状态管理
+- 使用 Pinia 管理复杂状态
+- 创建专门的 store 文件
+- 分离业务逻辑和 UI 逻辑
+
+### 工具函数
+- 提取 XML 解析逻辑到 `utils/xmlParser.ts`
+- 创建数据验证工具 `utils/validation.ts`
+- 封装文件操作 `utils/fileHandler.ts`

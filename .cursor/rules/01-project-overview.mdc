@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+description: "项目整体概览和核心功能介绍"
+---
+
+# 项目概览 - Apple 隐私清单生成器
+
+## 项目简介
+这是一个基于 Vue 3 + TypeScript 的 Apple 隐私清单生成器，用于帮助 iOS 开发者生成符合 Apple 要求的 PrivacyInfo.xcprivacy 文件。
+
+## 核心功能
+1. **隐私跟踪配置** - 设置应用是否包含隐私跟踪功能
+2. **跟踪域名管理** - 添加和管理第三方跟踪域名
+3. **API 使用声明** - 配置应用使用的敏感 API 及使用原因
+4. **数据收集类型** - 声明应用收集的用户数据类型和使用目的
+5. **XML 生成预览** - 实时生成和预览 XML 格式的隐私清单
+6. **文件导入导出** - 支持导入现有隐私清单文件和导出生成的文件
+
+## 技术栈
+- **前端框架**: Vue 3 (Composition API)
+- **语言**: TypeScript
+- **构建工具**: Vite
+- **状态管理**: Pinia (已配置但未在当前代码中使用)
+- **路由**: Vue Router (已配置但未在当前代码中使用)
+- **代码规范**: ESLint + Vue ESLint Config
+
+## 项目结构
+- 入口文件: [src/main.ts](mdc:privacy-manifest-generator/src/main.ts)
+- 主组件: [src/App.vue](mdc:privacy-manifest-generator/src/App.vue)
+- 构建配置: [vite.config.ts](mdc:privacy-manifest-generator/vite.config.ts)
+- 依赖配置: [package.json](mdc:privacy-manifest-generator/package.json)
+- 示例文件: [sample-privacy.xcprivacy](mdc:privacy-manifest-generator/sample-privacy.xcprivacy)
+
+## 开发环境要求
+- Node.js: ^20.19.0 || >=22.12.0
+- 包管理器: npm
+- 开发工具: VS Code + Volar (推荐)
+
+## 快速命令
+- `npm run dev` - 启动开发服务器
+- `npm run build` - 构建生产版本
+- `npm run lint` - 代码规范检查
+- `npm run type-check` - TypeScript 类型检查
